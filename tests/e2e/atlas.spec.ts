@@ -95,3 +95,44 @@ test("desktop primary navigation is keyboard reachable", async ({ page }, testIn
   await expect.poll(() => page.evaluate(() => document.activeElement?.matches("button,input,select,a[href]") ?? false)).toBe(true);
   await expect(page.getByText(/financing transactions/i)).toHaveCount(0);
 });
+
+test("invalid URL state is discarded before it reaches controls", async ({ page }) => {
+  await page.goto("/?classification=not-real&technology=coal&geography=XX&facility=missing");
+  await expect(page.getByLabel("Geography")).toHaveValue("WORLD");
+  await page.getByRole("button", { name: /Filters/ }).click();
+  await expect(page.getByLabel("Eligible")).not.toBeChecked();
+  await expect(page).not.toHaveURL(/classification=not-real|technology=coal|geography=XX|facility=missing/);
+});
+
+test("malformed public data fails closed with a bounded error", async ({ page }) => {
+  await page.route("**/data/atlas-v1.json", (route) => route.fulfill({ json: { release: { version: "invalid" } } }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Atlas unavailable" })).toBeVisible();
+  await expect(page.getByText("Dataset validation failed: the published file does not match the atlas contract.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Clean-energy facility map" })).toHaveCount(0);
+});
+
+test("evidence drawer traps focus, closes with Escape, and restores its opener", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "Desktop header layout.");
+  await page.goto("/");
+  const opener = page.getByRole("button", { name: "Sources", exact: true });
+  await opener.focus();
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "sources" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close sources" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.locator("a").last()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
+test("filtered capacity aggregates expose observation lineage", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.startsWith("mobile"), "The compact mobile layout intentionally hides the map legend.");
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Download calculation lineage" })).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download calculation lineage" }).click();
+  expect((await download).suggestedFilename()).toBe("filtered-capacity-lineage.json");
+});

@@ -4,15 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import hashlib
 import io
 import json
 import os
 import re
+import sys
 import tempfile
 import urllib.parse
 import urllib.request
+import urllib.error
+import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -62,10 +66,23 @@ def stable_id(prefix: str, *parts: Any) -> str:
     return f"{prefix}-{hashlib.sha256(raw.encode()).hexdigest()[:20]}"
 
 
-def read_url(url: str) -> bytes:
+def read_url(url: str, *, attempts: int = 3) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "clean-energy-map-connector/1.0"})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read()
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                payload = response.read()
+                if not payload:
+                    raise RuntimeError("Upstream response was empty")
+                return payload
+        except urllib.error.HTTPError as cause:
+            if cause.code not in {408, 429, 500, 502, 503, 504} or attempt + 1 == attempts:
+                raise
+        except (TimeoutError, urllib.error.URLError):
+            if attempt + 1 == attempts:
+                raise
+        time.sleep(0.25 * (2**attempt))
+    raise AssertionError("unreachable")
 
 
 def source_meta(
@@ -81,10 +98,12 @@ def source_meta(
     cadence: str,
     warnings: list[str],
     limitations: list[str],
+    retrieved_at: str | None = None,
 ) -> dict[str, Any]:
+    retrieved = retrieved_at or datetime.now(UTC).replace(microsecond=0).isoformat()
     freshness = "unknown"
     if publication_date:
-        age = (date.today() - date.fromisoformat(publication_date)).days
+        age = (datetime.fromisoformat(retrieved).date() - date.fromisoformat(publication_date)).days
         freshness = "current" if age <= 120 else "stale"
     return {
         "source_id": source_id,
@@ -92,7 +111,7 @@ def source_meta(
         "canonical_url": canonical_url,
         "publication_date": publication_date,
         "observation_period": observation_period,
-        "retrieved_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+        "retrieved_at": retrieved,
         "acquisition_method": acquisition_method,
         "checksum": None,
         "connector_version": CONNECTOR_VERSION,
@@ -143,12 +162,10 @@ def eia_rows(raw: bytes, suffix: str) -> list[dict[str, Any]]:
         "xl/worksheets/sheet3.xml": "retired",
         "xl/worksheets/sheet4.xml": "cancelled_or_postponed",
     }
-    with tempfile.NamedTemporaryFile(suffix=".xlsx") as temp:
-        temp.write(raw)
-        temp.flush()
+    with temporary_source_file(raw, ".xlsx") as path:
         rows: list[dict[str, Any]] = []
         for sheet, inventory_status in sheets.items():
-            for row in iter_xlsx_records(Path(temp.name), header_row=3, sheet=sheet):
+            for row in iter_xlsx_records(path, header_row=3, sheet=sheet):
                 row["inventory_status"] = inventory_status
                 rows.append(row)
         return rows
@@ -172,16 +189,25 @@ def normalize_eia(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, An
     baseline = annual_eia()
     records, observations = [], []
     counts = {key: 0 for key in ("added", "changed", "unchanged", "retired", "cancelled", "deferred", "conflicted", "unmatched", "rejected", "review_required")}
-    for row in eia_rows(raw, suffix):
+    rejected_rows = []
+    seen: set[tuple[str, str]] = set()
+    for row_number, row in enumerate(eia_rows(raw, suffix), start=1):
         if row.get("Technology") not in PUBLISHED_TECHNOLOGIES:
             counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "reason": "technology_out_of_scope"})
             continue
         plant = row.get("Plant ID", row.get("Plant Code"))
         generator = row.get("Generator ID")
         if plant in (None, "") or generator in (None, ""):
             counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "reason": "missing_stable_identifier"})
             continue
         key = (str(int(plant)) if isinstance(plant, float) else str(plant), str(generator))
+        if key in seen:
+            counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "record_key": f"{key[0]}:{key[1]}", "reason": "duplicate_stable_identifier"})
+            continue
+        seen.add(key)
         inventory = str(row.get("inventory_status", "unknown"))
         values = {
             "plant_code": key[0],
@@ -192,8 +218,10 @@ def normalize_eia(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, An
             "inventory_status": inventory,
             "status": status_code(row.get("Status")),
         }
-        if row.get("Latitude") is not None and row.get("Longitude") is not None:
-            values.update({"latitude": row["Latitude"], "longitude": row["Longitude"]})
+        latitude = parse_number(row.get("Latitude"), "latitude")
+        longitude = parse_number(row.get("Longitude"), "longitude")
+        if latitude is not None and longitude is not None:
+            values.update({"latitude": latitude, "longitude": longitude})
         record, items = observed_record(meta, f"{key[0]}:{key[1]}", values, {"nameplate_capacity_mw": "MW", "latitude": "degrees", "longitude": "degrees"})
         record["external_identifiers"] = {"eia_plant_code": key[0], "eia_generator_id": key[1]}
         if "latitude" in values:
@@ -219,17 +247,40 @@ def normalize_eia(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, An
         record["annual_final_record_preserved"] = prior is not None
         records.append(record)
         observations.extend(items)
-    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "counts": counts}
+    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "counts": counts, "rejected_rows": rejected_rows}
+
+
+@contextlib.contextmanager
+def temporary_source_file(raw: bytes, suffix: str):
+    descriptor, name = tempfile.mkstemp(suffix=suffix)
+    path = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(raw)
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def parse_number(value: Any, field: str) -> float | None:
+    if value in (None, "") or (isinstance(value, str) and not value.strip()):
+        return None
+    try:
+        number = float(str(value).replace(",", "").strip())
+    except ValueError as cause:
+        raise ValueError(f"Invalid numeric {field}: {value!r}") from cause
+    if not (-90 <= number <= 90) and field == "latitude":
+        raise ValueError(f"Invalid latitude: {number}")
+    if not (-180 <= number <= 180) and field == "longitude":
+        raise ValueError(f"Invalid longitude: {number}")
+    return number
 
 
 def generic_rows(raw: bytes, suffix: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if suffix == ".json":
         return load_json_payload(raw)
     if suffix == ".xlsx":
-        with tempfile.NamedTemporaryFile(suffix=".xlsx") as temp:
-            temp.write(raw)
-            temp.flush()
-            path = Path(temp.name)
+        with temporary_source_file(raw, ".xlsx") as path:
             header_row = None
             for row_number, row in enumerate(iter_xlsx_rows(path), start=1):
                 folded = {str(value).strip().casefold() for value in row if value not in (None, "")}
@@ -263,23 +314,33 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
         eia_by_name.setdefault(str(item["values"].get("plant_name", "")).casefold(), []).append(item)
     records, observations = [], []
     counts = {key: 0 for key in ("added", "changed", "unchanged", "conflicted", "unmatched", "rejected", "review_required", "ambiguous", "matched")}
+    rejected_rows = []
+    seen: set[str] = set()
     for index, row in enumerate(rows, start=1):
         country = str(pick(row, "Country/area", "Country", "country") or "")
         technology = pick(row, "Technology", "technology")
         restriction = pick(row, "License restriction", "license_restriction")
         if country not in {"United States", "United States of America", "USA", "US"} or (technology and technology not in PUBLISHED_TECHNOLOGIES) or restriction:
             counts["rejected"] += 1
+            rejected_rows.append({"row": index, "reason": "out_of_scope_or_restricted", "restriction": restriction})
             continue
         gem_id = pick(row, "GEM unit ID", "gem_unit_id", "GEM ID")
         if not gem_id:
             counts["rejected"] += 1
+            rejected_rows.append({"row": index, "reason": "missing_gem_unit_id"})
             continue
+        gem_id = str(gem_id)
+        if gem_id in seen:
+            counts["rejected"] += 1
+            rejected_rows.append({"row": index, "record_key": gem_id, "reason": "duplicate_stable_identifier"})
+            continue
+        seen.add(gem_id)
         values = {
             "gem_unit_id": str(gem_id),
             "name": pick(row, "Project name", "Plant name", "name"),
             "technology": technology,
             "status": pick(row, "Status", "status"),
-            "capacity_mw": pick(row, "Capacity (MW)", "capacity_mw"),
+            "capacity_mw": parse_number(pick(row, "Capacity (MW)", "capacity_mw"), "capacity_mw"),
             "start_date": pick(row, "Start year", "start_date"),
             "retirement_date": pick(row, "Retired year", "retirement_date"),
             "owner": pick(row, "Owner", "owner"),
@@ -311,7 +372,8 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
         record["match_state"] = match_state
         record["match_method"] = "exact_external_identifier" if exact else "candidate_only_no_merge"
         precision = str(values.get("location_precision", "")).casefold()
-        latitude, longitude = pick(row, "Latitude", "latitude"), pick(row, "Longitude", "longitude")
+        latitude = parse_number(pick(row, "Latitude", "latitude"), "latitude")
+        longitude = parse_number(pick(row, "Longitude", "longitude"), "longitude")
         if latitude is not None and longitude is not None and precision in {"exact", "precise"}:
             location_values = {"latitude": latitude, "longitude": longitude}
             location_items = [observation(meta, str(gem_id), key, value, "degrees") for key, value in location_values.items()]
@@ -319,7 +381,7 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
             record["plot"] = {"coordinates": [longitude, latitude], "location_observation_ids": [item["id"] for item in location_items], "precision": precision}
         records.append(record)
         observations.extend(items)
-    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "counts": counts}
+    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "counts": counts, "rejected_rows": rejected_rows}
 
 
 def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, Any]:
@@ -328,7 +390,9 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
     counts = {key: 0 for key in ("added", "changed", "unchanged", "conflicted", "unmatched", "rejected", "review_required")}
     value_observations: dict[str, str] = {}
     values_by_series: dict[str, float] = {}
-    for row in rows:
+    rejected_rows = []
+    seen: set[str] = set()
+    for row_number, row in enumerate(rows, start=1):
         entity = pick(row, "entity_code", "ISO 3 code")
         period = str(pick(row, "date", "Year") or "")
         category = pick(row, "Category")
@@ -337,8 +401,18 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
         value = pick(row, "generation_twh", "Value")
         if entity != "USA" or period != "2024" or unit != "TWh" or (category and category != "Electricity generation") or value is None:
             counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "reason": "incompatible_scope_period_or_unit"})
+            continue
+        if series is None or not str(series).strip():
+            counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "reason": "missing_indicator"})
             continue
         key = f"USA:2024:{series}:generation_twh"
+        if key in seen:
+            counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "record_key": key, "reason": "duplicate_stable_identifier"})
+            continue
+        seen.add(key)
         values = {"territory": "USA", "period": "2024", "indicator": series, "value": float(value), "unit": "TWh", "method": "Ember yearly electricity data"}
         record, items = observed_record(meta, key, values, {"value": "TWh"})
         records.append(record)
@@ -352,14 +426,17 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
     reconciliations = []
     full_release = json.loads((ROOT / "public/data/downloads/atlas-v1-full.json").read_text())
     eia_calculation = next(item for item in full_release["calculations"] if item["id"] == "calc-us-electricity-generation-share-2024")
+    eia_inputs = {item["label"]: (item, observation_id) for item, observation_id in zip(eia_calculation["inputs"], eia_calculation["inputObservationIds"], strict=True)}
+    total_inputs = [eia_inputs[name] for name in ("Utility-scale total generation", "Estimated small-scale solar PV")]
+    eligible_inputs = [eia_inputs[name] for name in ("Nuclear generation", "Wind generation", "Total solar generation")]
     total_name = "Total Generation" if "Total Generation" in values_by_series else "Total"
     if total_name in values_by_series:
-        eia_total_twh = sum(item["value"] for item in eia_calculation["inputs"][3:5]) / 1000
+        eia_total_twh = sum(item[0]["value"] for item in total_inputs) / 1000
         ember_total_twh = values_by_series[total_name]
         reconciliations.append({
             "id": "reconcile-us-total-generation-2024",
             "formula": "ember_total_twh - eia_total_thousand_mwh / 1000",
-            "input_observation_ids": [value_observations[total_name], *eia_calculation["inputObservationIds"][3:5]],
+            "input_observation_ids": [value_observations[total_name], *(item[1] for item in total_inputs)],
             "ember_value": ember_total_twh,
             "eia_value": eia_total_twh,
             "difference": round(ember_total_twh - eia_total_twh, 6),
@@ -369,11 +446,11 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
     eligible = [name for name in ("Nuclear", "Wind", "Solar") if name in values_by_series]
     if len(eligible) == 3:
         ember_eligible_twh = sum(values_by_series[name] for name in eligible)
-        eia_eligible_twh = sum(item["value"] for item in eia_calculation["inputs"][:3]) / 1000
+        eia_eligible_twh = sum(item[0]["value"] for item in eligible_inputs) / 1000
         reconciliations.append({
             "id": "reconcile-us-eligible-generation-2024",
             "formula": "sum(ember_nuclear_wind_solar_twh) - sum(eia_nuclear_wind_solar_thousand_mwh) / 1000",
-            "input_observation_ids": [*[value_observations[name] for name in eligible], *eia_calculation["inputObservationIds"][:3]],
+            "input_observation_ids": [*[value_observations[name] for name in eligible], *(item[1] for item in eligible_inputs)],
             "ember_value": round(ember_eligible_twh, 6),
             "eia_value": round(eia_eligible_twh, 6),
             "difference": round(ember_eligible_twh - eia_eligible_twh, 6),
@@ -381,23 +458,31 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
             "selection": "conflicted" if abs(ember_eligible_twh - eia_eligible_twh) > 0.001 else "matched",
         })
     counts["conflicted"] += sum(item["selection"] == "conflicted" for item in reconciliations)
-    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "calculations": calculations, "reconciliations": reconciliations, "counts": counts, "fixture": fixture}
+    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "calculations": calculations, "reconciliations": reconciliations, "counts": counts, "rejected_rows": rejected_rows, "fixture": fixture}
 
 
 def persist_snapshot(store: Path, raw: bytes, suffix: str, meta: dict[str, Any], normalized: dict[str, Any], dry_run: bool) -> tuple[Path, bool]:
     snapshot = store / "snapshots" / meta["source_id"] / f"{meta['checksum']}-{CONNECTOR_VERSION}"
+    expected = {f"source{suffix}": raw, "manifest.json": canonical_json(meta), "normalized.json": canonical_json(normalized)}
+    if snapshot.exists():
+        actual_names = {item.name for item in snapshot.iterdir() if item.is_file()}
+        if actual_names != set(expected) or any((snapshot / name).read_bytes() != content for name, content in expected.items()):
+            raise RuntimeError(f"Incomplete or tampered immutable snapshot: {snapshot}")
+        return snapshot, False
     if dry_run:
         return snapshot, False
-    raw_path = snapshot / f"source{suffix}"
-    created = not snapshot.exists()
-    snapshot.mkdir(parents=True, exist_ok=True)
-    if raw_path.exists() and raw_path.read_bytes() != raw:
-        raise RuntimeError(f"Immutable snapshot collision: {snapshot}")
-    if not raw_path.exists():
-        raw_path.write_bytes(raw)
-        (snapshot / "manifest.json").write_bytes(canonical_json(meta))
-        (snapshot / "normalized.json").write_bytes(canonical_json(normalized))
-    return snapshot, created
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{snapshot.name}-", dir=snapshot.parent))
+    try:
+        for name, content in expected.items():
+            (staging / name).write_bytes(content)
+        staging.replace(snapshot)
+    finally:
+        if staging.exists():
+            for item in staging.iterdir():
+                item.unlink()
+            staging.rmdir()
+    return snapshot, True
 
 
 def acquire(path: Path | None, url: str | None, fixture: Path, offline: bool) -> tuple[bytes, str, str]:
@@ -422,7 +507,7 @@ def report_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -432,17 +517,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE)
     parser.add_argument("--report-json", type=Path)
     parser.add_argument("--report-md", type=Path)
+    parser.add_argument("--json-only", action="store_true")
     args = parser.parse_args(argv)
+
+    for output in (args.report_json, args.report_md):
+        if output and (ROOT / "public/data") in output.resolve().parents:
+            raise RuntimeError("Report output cannot target public/data")
+
+    recorded_retrieval = "2026-06-24T00:00:00+00:00" if args.offline else None
 
     public_before = digest(PUBLIC_RELEASE.read_bytes())
     eia_raw, eia_suffix, eia_method = acquire(args.eia_file, EIA_URL, FIXTURES / "eia860m-may-2026.json", args.offline)
-    eia_meta = source_meta("eia-860m", "2026-05", EIA_URL, "2026-06-24", "2026-05", eia_method, "U.S. federal government public-domain data", [], ["Operating", "Planned", "Retired", "Canceled or Postponed"], "monthly", ["Preliminary inventory; later monthly files may correct values without a specific notice."], ["Plants with at least 1 MW combined nameplate capacity.", "Does not establish production, financing, or survey-grade coordinates."])
+    eia_meta = source_meta("eia-860m", "2026-05", EIA_URL, "2026-06-24", "2026-05", eia_method, "U.S. federal government public-domain data", [], ["Operating", "Planned", "Retired", "Canceled or Postponed"], "monthly", ["Preliminary inventory; later monthly files may correct values without a specific notice."], ["Plants with at least 1 MW combined nameplate capacity.", "Does not establish production, financing, or survey-grade coordinates."], recorded_retrieval)
     eia_meta["checksum"] = digest(eia_raw)
     eia = normalize_eia(eia_raw, eia_suffix, eia_meta)
 
     gem_path = args.gem_file
     gem_raw, gem_suffix, gem_method = acquire(gem_path, None, FIXTURES / "gem-gipt-contract.json", args.offline)
-    gem_meta = source_meta("gem-gipt", "2026-03", GEM_URL, "2026-03-01", "rolling release", gem_method, "CC BY 4.0; row-level third-party restrictions still apply", [], ["GIPT unit-level export; accepted header aliases are documented in the connector tests"], "rolling after component tracker releases", ["Automatic download requires the official GEM form; no scraping or CAPTCHA bypass is attempted."], ["Pilot limited to the United States and technologies already published by the atlas.", "Approximate GEM locations remain unplotted."])
+    gem_meta = source_meta("gem-gipt", "2026-03", GEM_URL, "2026-03-01", "rolling release", gem_method, "CC BY 4.0; row-level third-party restrictions still apply", [], ["GIPT unit-level export; accepted header aliases are documented in the connector tests"], "rolling after component tracker releases", ["Automatic download requires the official GEM form; no scraping or CAPTCHA bypass is attempted."], ["Pilot limited to the United States and technologies already published by the atlas.", "Approximate GEM locations remain unplotted."], recorded_retrieval)
     gem_meta["checksum"] = digest(gem_raw)
     gem = normalize_gem(gem_raw, gem_suffix, gem_meta, eia["records"])
 
@@ -460,14 +552,14 @@ def main(argv: list[str] | None = None) -> int:
         if api_key.encode() in ember_raw:
             raise RuntimeError("Ember API echoed the credential; refusing to snapshot the response")
         ember_suffix, ember_method = ".json", "official_api"
-    ember_meta = source_meta("ember-yearly-electricity", "2026-06-23", EMBER_URL, "2026-06-23", "2024", ember_method, "CC BY 4.0", ["Attribution required", "No additional legal or technological restrictions"], ["Generation response: entity, entity_code, date, series, generation_twh, share_of_generation_pct"], "yearly with revisions", [], ["National aggregates only; never allocated to facilities.", "Capacity, production, primary energy, and final consumption remain separate quantities."])
+    ember_meta = source_meta("ember-yearly-electricity", "2026-06-23", EMBER_URL, "2026-06-23", "2024", ember_method, "CC BY 4.0", ["Attribution required", "No additional legal or technological restrictions"], ["Generation response: entity, entity_code, date, series, generation_twh, share_of_generation_pct"], "yearly with revisions", [], ["National aggregates only; never allocated to facilities.", "Capacity, production, primary energy, and final consumption remain separate quantities."], recorded_retrieval)
     ember_meta["checksum"] = digest(ember_raw)
     ember = normalize_ember(ember_raw, ember_suffix, ember_meta)
 
     source_reports = []
     for meta, raw, suffix, normalized in ((eia_meta, eia_raw, eia_suffix, eia), (gem_meta, gem_raw, gem_suffix, gem), (ember_meta, ember_raw, ember_suffix, ember)):
-        path, created = persist_snapshot(args.store, raw, suffix, meta, normalized, args.dry_run)
-        source_reports.append({**meta, "snapshot_path": str(path), "snapshot_created": created, "rows_read": len(normalized["records"]) + normalized["counts"].get("rejected", 0), "observations_created": len(normalized["observations"]), "counts": normalized["counts"], "reconciliations": normalized.get("reconciliations", []), "coverage_limitations": "; ".join(meta["limitations"]), "potentially_affected_public_values": ["US facility freshness", "US national 2024 electricity reconciliation"]})
+        path, _ = persist_snapshot(args.store, raw, suffix, meta, normalized, args.dry_run)
+        source_reports.append({**meta, "snapshot_path": str(path), "rows_read": len(normalized["records"]) + normalized["counts"].get("rejected", 0), "observations_created": len(normalized["observations"]), "counts": normalized["counts"], "rejected_rows": normalized.get("rejected_rows", []), "reconciliations": normalized.get("reconciliations", []), "coverage_limitations": "; ".join(meta["limitations"]), "potentially_affected_public_values": ["US facility freshness", "US national 2024 electricity reconciliation"]})
 
     public_after = digest(PUBLIC_RELEASE.read_bytes())
     if public_before != public_after:
@@ -475,9 +567,12 @@ def main(argv: list[str] | None = None) -> int:
     release = json.loads(PUBLIC_RELEASE.read_text())["release"]
     report = {"connector_version": CONNECTOR_VERSION, "dry_run": args.dry_run, "offline": args.offline, "public_release": release["version"], "public_release_sha256": public_after, "public_release_changed": False, "sources": source_reports}
     human = report_markdown(report)
-    print(human)
-    print("--- JSON ---")
-    print(json.dumps(report, indent=2, sort_keys=True))
+    if args.json_only:
+        print(json.dumps(report, sort_keys=True, separators=(",", ":")))
+    else:
+        print(human)
+        print("--- JSON ---")
+        print(json.dumps(report, indent=2, sort_keys=True))
     if args.report_json:
         args.report_json.parent.mkdir(parents=True, exist_ok=True)
         args.report_json.write_bytes(canonical_json(report))
@@ -485,6 +580,17 @@ def main(argv: list[str] | None = None) -> int:
         args.report_md.parent.mkdir(parents=True, exist_ok=True)
         args.report_md.write_text(human + "\n")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    try:
+        return _main(effective_argv)
+    except Exception as cause:
+        if "--json-only" in effective_argv:
+            print(json.dumps({"error": {"type": type(cause).__name__, "message": str(cause)}, "status": "failed"}, sort_keys=True, separators=(",", ":")))
+            return 1
+        raise
 
 
 if __name__ == "__main__":

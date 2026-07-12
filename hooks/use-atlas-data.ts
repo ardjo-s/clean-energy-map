@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AtlasDataset } from "@/lib/domain/schemas";
+import { atlasDatasetSchema, type AtlasDataset } from "@/lib/domain/schemas";
 
 export function useAtlasData() {
   const [data, setData] = useState<AtlasDataset | null>(null);
@@ -11,11 +11,17 @@ export function useAtlasData() {
     fetch("/data/atlas-v1.json", { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Dataset unavailable (${response.status})`);
-        return response.json() as Promise<AtlasDataset>;
+        return response.json();
       })
-      .then(setData)
+      .then((value: unknown) => {
+        const result = atlasDatasetSchema.safeParse(value);
+        if (!result.success) throw new Error("Dataset validation failed: the published file does not match the atlas contract.");
+        setData(result.data);
+      })
       .catch((cause: unknown) => {
-        if ((cause as Error).name !== "AbortError") setError((cause as Error).message);
+        if ((cause as Error).name !== "AbortError") {
+          setError(cause instanceof Error ? cause.message : "Dataset validation failed");
+        }
       });
     return () => controller.abort();
   }, []);

@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AtlasFilters } from "@/lib/atlas/query";
 import { emptyFilters } from "@/lib/atlas/query";
-import type { Classification, Confidence, EnergyRole, Facility, Technology } from "@/lib/domain/schemas";
-import type { FreshnessState, LocationState } from "@/lib/atlas/query";
+import { classificationSchema, confidenceSchema, energyRoleSchema, lifecycleStateSchema, precisionSchema, technologySchema } from "@/lib/domain/schemas";
 
 export type DrawerPage = "coverage" | "sources" | "methodology" | "limitations";
 export type MapViewState = { longitude: number; latitude: number; zoom: number };
@@ -15,6 +14,17 @@ function finiteParameter(params: URLSearchParams, name: string, minimum: number,
   if (raw === null || raw.trim() === "") return null;
   const value = Number(raw);
   return Number.isFinite(value) && value >= minimum && value <= maximum ? value : null;
+}
+
+function enumParameters<T extends string>(params: URLSearchParams, name: string, schema: { safeParse(value: unknown): { success: boolean; data?: T } }): T[] {
+  return params.getAll(name).flatMap((value) => {
+    const result = schema.safeParse(value);
+    return result.success && result.data ? [result.data] : [];
+  });
+}
+
+function listedParameters<T extends string>(params: URLSearchParams, name: string, values: readonly T[]): T[] {
+  return params.getAll(name).filter((value): value is T => values.includes(value as T));
 }
 
 function readState(): AtlasUrlState {
@@ -31,14 +41,14 @@ function readState(): AtlasUrlState {
     filters: {
       ...emptyFilters,
       query: p.get("q") ?? "",
-      technologies: p.getAll("technology") as Technology[],
-      classifications: p.getAll("classification") as Classification[],
-      lifecycleStates: p.getAll("lifecycle") as Facility["lifecycleState"][],
-      energyRoles: p.getAll("role") as EnergyRole[],
-      confidences: p.getAll("confidence") as Confidence[],
-      precisions: p.getAll("precision") as Facility["location"]["precision"][],
-      locationStates: p.getAll("location") as LocationState[],
-      freshnessStates: p.getAll("freshness") as FreshnessState[],
+      technologies: enumParameters(p, "technology", technologySchema),
+      classifications: enumParameters(p, "classification", classificationSchema),
+      lifecycleStates: enumParameters(p, "lifecycle", lifecycleStateSchema),
+      energyRoles: enumParameters(p, "role", energyRoleSchema),
+      confidences: enumParameters(p, "confidence", confidenceSchema),
+      precisions: enumParameters(p, "precision", precisionSchema),
+      locationStates: listedParameters(p, "location", ["mapped", "unplotted"] as const),
+      freshnessStates: listedParameters(p, "freshness", ["current", "stale"] as const),
       minimumCapacityMw: finiteParameter(p, "capacityMin", 0, Number.MAX_SAFE_INTEGER),
       maximumCapacityMw: finiteParameter(p, "capacityMax", 0, Number.MAX_SAFE_INTEGER),
     },

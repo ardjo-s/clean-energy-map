@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Search, X } from "lucide-react";
 import type { AtlasDataset } from "@/lib/domain/schemas";
 import type { DrawerPage } from "@/hooks/use-atlas-url";
@@ -9,6 +9,41 @@ const repository = "https://github.com/ardjo-s/clean-energy-map/blob/agent/verif
 
 export function EvidenceDrawer({ page, geography, data, onClose }: { page: DrawerPage | null; geography: string; data: AtlasDataset; onClose(): void }) {
   const [query, setQuery] = useState("");
+  const drawerRef = useRef<HTMLElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => {
+    if (!page) return;
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const drawer = drawerRef.current;
+    const focusable = () => [...(drawer?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])') ?? [])];
+    focusable()[0]?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    drawer?.addEventListener("keydown", handleKeyDown);
+    return () => {
+      drawer?.removeEventListener("keydown", handleKeyDown);
+      openerRef.current?.focus();
+    };
+  }, [page]);
   if (!page) return null;
   const method = data.methodologyReleases.find((item) => item.id === data.release.methodologyReleaseId);
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -18,7 +53,7 @@ export function EvidenceDrawer({ page, geography, data, onClose }: { page: Drawe
     return geography === "WORLD" ? item.technology === null : item.geographyCode === geography;
   });
   const sources = data.sources.filter((item) => !normalizedQuery || `${item.publisher} ${item.title} ${item.coverageScope} ${item.sourceType} ${item.publicationDate ?? ""}`.toLocaleLowerCase().includes(normalizedQuery));
-  return <aside className="evidence-drawer" aria-label={page}>
+  return <aside ref={drawerRef} className="evidence-drawer" role="dialog" aria-modal="true" aria-label={page}>
     <header><div><p className="eyebrow">Evidence surface</p><h2>{page[0].toUpperCase() + page.slice(1)}</h2></div><button className="icon-button" aria-label={`Close ${page}`} onClick={onClose}><X/></button></header>
     {(page === "coverage" || page === "sources") && <label className="drawer-search"><Search size={17}/><input type="search" aria-label={`Search ${page}`} placeholder={page === "coverage" ? "Geography, technology, status" : "Publisher, dataset, scope, freshness"} value={query} onChange={(event) => setQuery(event.target.value)}/></label>}
     {page === "coverage" && <><p className="drawer-summary">{coverage.length.toLocaleString()} assessment{coverage.length === 1 ? "" : "s"}. Empty map layers mean unassessed coverage, never zero infrastructure.</p>{coverage.map((item) => <article key={item.id}><p className={`publication-status ${item.publicationStatus}`}>{item.publicationStatus.replaceAll("_", " ")}</p><h3>{geographyNames.get(item.geographyCode) ?? item.geographyCode} · {item.technology?.replaceAll("_", " ") ?? "National baseline"}</h3><p><strong>{item.status.replaceAll("_", " ")}</strong>{item.measuredCoverage ? ` · ${item.measuredCoverage.resultPercent.toFixed(2)}% measured ${item.measuredCoverage.unit}` : " · Coverage not quantified"}</p><p>{item.scope}</p><dl className="gate-list"><dt>Energy baseline</dt><dd>{item.authoritativeBaseline ? "Passed" : "Missing"}</dd><dt>Facility sources</dt><dd>{item.facilitySourcesPresent ? "Passed" : "Missing"}</dd><dt>Measured coverage</dt><dd>{item.measuredCoverage ? "Passed" : "Missing"}</dd><dt>Reproducible method</dt><dd>{item.reproducibleMethod ? "Passed" : "Missing"}</dd></dl><ul>{item.visibleLimitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul></article>)}</>}

@@ -338,17 +338,16 @@ def build() -> dict[str, Any]:
     for row in relevant_ownership:
         ownership_by_generator[(int(row["Plant Code"]), str(row["Generator ID"]))].append(row)
 
-    RAW_ROWS.parent.mkdir(parents=True, exist_ok=True)
-    with RAW_ROWS.open("w", encoding="utf-8") as stream:
-        for row in relevant:
-            kept = {key: row.get(key) for key in ["Utility ID", "Utility Name", "Plant Code", "Plant Name", "State", "County", "Generator ID", "Technology", "Prime Mover", "Status", "Nameplate Capacity (MW)", "Summer Capacity (MW)", "Operating Month", "Operating Year", "Energy Source 1"]}
-            kept["source"] = "EIA-860 final 2024, 3_1_Generator_Y2024.xlsx, Operable"
-            stream.write(json.dumps(kept, sort_keys=True, separators=(",", ":")) + "\n")
-    with RAW_OWNERSHIP_ROWS.open("w", encoding="utf-8") as stream:
-        for row in relevant_ownership:
-            kept = {key: row.get(key) for key in ["Plant Code", "Plant Name", "Generator ID", "Owner Name", "Ownership ID", "Percent Owned"]}
-            kept["source"] = "EIA-860 final 2024, 4___Owner_Y2024.xlsx"
-            stream.write(json.dumps(kept, sort_keys=True, separators=(",", ":")) + "\n")
+    raw_rows = []
+    for row in relevant:
+        kept = {key: row.get(key) for key in ["Utility ID", "Utility Name", "Plant Code", "Plant Name", "State", "County", "Generator ID", "Technology", "Prime Mover", "Status", "Nameplate Capacity (MW)", "Summer Capacity (MW)", "Operating Month", "Operating Year", "Energy Source 1"]}
+        kept["source"] = "EIA-860 final 2024, 3_1_Generator_Y2024.xlsx, Operable"
+        raw_rows.append(json.dumps(kept, sort_keys=True, separators=(",", ":")))
+    raw_ownership_rows = []
+    for row in relevant_ownership:
+        kept = {key: row.get(key) for key in ["Plant Code", "Plant Name", "Generator ID", "Owner Name", "Ownership ID", "Percent Owned"]}
+        kept["source"] = "EIA-860 final 2024, 4___Owner_Y2024.xlsx"
+        raw_ownership_rows.append(json.dumps(kept, sort_keys=True, separators=(",", ":")))
 
     groups: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
     for row in relevant:
@@ -683,14 +682,24 @@ def build() -> dict[str, Any]:
                 "sourceIds": [], "assessedAt": RETRIEVED_AT,
             })
 
-    build_id = hashlib.sha256(f"{EXPECTED_EIA_SHA256}|{EXPECTED_NLR_SHA256}|{METHOD_VERSION}".encode()).hexdigest()[:16]
+    source_snapshots = sorted(f"{item['id']}={item['snapshotSha256']}" for item in sources if item["snapshotSha256"])
+    build_id = hashlib.sha256("|".join([*source_snapshots, METHOD_VERSION, DATASET_VERSION]).encode()).hexdigest()[:16]
     return {
+        "_rawRows": "\n".join(raw_rows) + "\n",
+        "_rawOwnershipRows": "\n".join(raw_ownership_rows) + "\n",
         "release": {
             "id": "atlas-v1-us-wave-2024.2",
             "version": DATASET_VERSION,
             "releasedAt": RETRIEVED_AT,
             "methodologyReleaseId": "methodology-1.1.0",
             "buildId": build_id,
+            "schemaVersions": {
+                "dataset": "atlas-dataset-v1",
+                "source": "source-v1",
+                "observation": "observation-v1",
+                "facility": "facility-v1",
+                "calculation": "calculation-v1",
+            },
             "sourceSnapshotDates": {item["id"]: item["publicationDate"] or item["accessedAt"] for item in sources},
             "changeSummary": "Adds explicit target-geography coverage states, calculation observations in the web release, and source-backed EIA ownership relationships.",
             "changeHistory": [
@@ -721,10 +730,11 @@ def build() -> dict[str, Any]:
 
 def main() -> None:
     data = build()
+    raw_rows_encoded = data.pop("_rawRows")
+    raw_ownership_encoded = data.pop("_rawOwnershipRows")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     FULL_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     full_encoded = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    FULL_OUTPUT.write_text(full_encoded, encoding="utf-8")
 
     # The browser view keeps every facility but points to the downloadable full
     # evidence release instead of forcing tens of thousands of raw observations
@@ -786,7 +796,25 @@ def main() -> None:
         "facilities": compact_facilities,
     }
     compact_encoded = json.dumps(compact_data, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
-    OUTPUT.write_text(compact_encoded, encoding="utf-8")
+    candidates = {
+        FULL_OUTPUT: full_encoded,
+        OUTPUT: compact_encoded,
+        RAW_ROWS: raw_rows_encoded,
+        RAW_OWNERSHIP_ROWS: raw_ownership_encoded,
+    }
+    staged: dict[Path, Path] = {}
+    try:
+        for destination, content in candidates.items():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, name = tempfile.mkstemp(prefix=f".{destination.name}-", dir=destination.parent)
+            with open(descriptor, "w", encoding="utf-8", closefd=True) as stream:
+                stream.write(content)
+            staged[destination] = Path(name)
+        for destination in (RAW_ROWS, RAW_OWNERSHIP_ROWS, FULL_OUTPUT, OUTPUT):
+            staged[destination].replace(destination)
+    finally:
+        for path in staged.values():
+            path.unlink(missing_ok=True)
     print(f"Wrote {OUTPUT.relative_to(ROOT)} ({len(data['facilities']):,} facilities, {len(compact_encoded):,} bytes)")
     print(f"Wrote {FULL_OUTPUT.relative_to(ROOT)} ({len(full_encoded):,} bytes, complete evidence release)")
 

@@ -106,8 +106,8 @@ export const sourceSchema = z.object({
   accessedAt: z.string().datetime(),
   license: z.string().min(1),
   coverageScope: z.string().min(1),
-  snapshotSha256: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
-  snapshotPath: z.string().nullable(),
+  snapshotSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  snapshotPath: z.string().min(1),
   redistribution: z.enum(["permitted", "restricted", "unknown"]),
 });
 
@@ -383,6 +383,19 @@ export const datasetReleaseSchema = z.object({
   releasedAt: z.string().datetime(),
   methodologyReleaseId: z.string().min(1),
   buildId: z.string().min(1),
+  schemaVersions: z.object({
+    dataset: z.string().min(1),
+    source: z.string().min(1),
+    observation: z.string().min(1),
+    facility: z.string().min(1),
+    calculation: z.string().min(1),
+  }).default({
+    dataset: "atlas-dataset-v1",
+    source: "source-v1",
+    observation: "observation-v1",
+    facility: "facility-v1",
+    calculation: "calculation-v1",
+  }),
   sourceSnapshotDates: z.record(z.string(), z.string()),
   changeSummary: z.string().min(1),
   changeHistory: z.array(z.object({

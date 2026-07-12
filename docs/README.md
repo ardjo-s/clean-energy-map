@@ -58,28 +58,30 @@ V1 preserves time-aware facilities, projects, phases, organizations, ownership, 
 
 The stages are cumulative. A later stage adds evidence and surfaces; it does not redefine V1 entities or weaken V1 verification.
 
-## Requirement traceability
+## R1–R18 completion audit
 
-| Requirement | Owning evidence |
-| --- | --- |
-| R1 product sequence | Constitution § Product sequence |
-| R2 maintained document system | This index and the six owning documents |
-| R3 journalist first; citizen clarity; expert depth | Constitution § Audience; V1 brief § Users |
-| R4 target geography | V1 brief § Geographic target |
-| R5 verified waves | Publication criteria § Publication model |
-| R6 auditable national baseline | Publication criteria § Verified national-baseline gates |
-| R7 coverage status and gaps | Publication criteria § Coverage vocabulary and matrix |
-| R8 ocean jurisdiction | Energy/geographic methodology § Ocean infrastructure |
-| R9 four clean classifications | Energy/geographic methodology § Classification states |
-| R10 lifecycle evidence and ranges | Energy/geographic methodology § Lifecycle method and reference evidence |
-| R11 distinct country indicators | Energy/geographic methodology § National and regional indicators |
-| R12 trace from claim to source | Verification contract § Calculation lineage |
-| R13 versioned public methods, data, history, limitations | Verification contract § Public releases and corrections |
-| R14 unplotted uncertain locations | Energy/geographic methodology § Location integrity |
-| R15 visible conflicts and uncertainty | Verification contract § Conflicts, uncertainty, and confidence |
-| R16 finance-ready entities and histories | Future-financing constraints § Required V1 foundation |
-| R17 no V1 finance-facing behavior | V1 brief § Explicitly deferred; future-financing constraints § V1 interface boundary |
-| R18 finance compatibility does not delay V1 | Future-financing constraints § V1 release rule |
+Status describes the checked-in V1 implementation, not future coverage. `npm run verify` is the common executable gate; narrower checks are named where they provide more direct proof.
+
+| Requirement | Status | Implementation evidence | Verification | Explicit limitation |
+| --- | --- | --- | --- | --- |
+| R1 product sequence | Complete | Constitution § Product sequence; `lib/domain/schemas.ts` | Documentation review | V2/V3 are intentionally inactive. |
+| R2 maintained document system | Complete | This index and the six owning documents | Link review | Historical `PROMPT.md` is non-executable. |
+| R3 journalist first; citizen clarity; expert depth | Complete | `components/atlas-app.tsx`, evidence and methodology drawers | `npm run test:e2e` | Expert evidence remains a secondary surface. |
+| R4 target geography | Complete | `scripts/ingest_eia860.py` target-geography matrix | `npm run verify:data` | Only the U.S. wave is verified. |
+| R5 verified waves | Complete | `coveragePublicationStatusSchema`, coverage UI | `npm run verify:data` | Other targets are withheld, never implied complete. |
+| R6 auditable national baseline | Complete | `countryIndicatorSchema`, `calculationSchema`, integrity arithmetic | `npm run test && npm run verify:data` | Baseline is U.S. electricity for 2024. |
+| R7 coverage status and gaps | Complete | `coverageAssessmentSchema`, coverage view | `npm run test:e2e` | Unassessed scopes remain explicit. |
+| R8 ocean jurisdiction | Complete | `jurisdictionSchema`, location limitations | `npm run verify:data` | No ocean-area facility wave is published. |
+| R9 four clean classifications | Complete | `classificationSchema`, facility classification reason | `npm run typecheck && npm run verify:data` | Biomass stays gated by facility evidence. |
+| R10 lifecycle evidence and ranges | Complete | `lifecycleEvidenceSchema`, lifecycle register | `npm run verify:data` | Facility-specific LCAs are not universally available. |
+| R11 distinct country indicators | Complete | `indicatorTypeSchema`, calculation arithmetic | `npm run test && npm run verify:data` | No metric is substituted for another. |
+| R12 trace from claim to source | Complete | immutable source snapshots, observations, calculations, evidence drawer | `npm run test && npm run verify:data` | Redistribution restrictions may limit raw downloads. |
+| R13 versioned methods, data, history, limitations | Complete | release schemas, change history, corrections URL | `npm run verify:data` | Legacy 2024.2 files receive V1 contract defaults when parsed. |
+| R14 unplotted uncertain locations | Complete | discriminated location schema and coordinate-evidence integrity | `npm run test && npm run verify:data` | One current record is intentionally unplotted. |
+| R15 visible conflicts and uncertainty | Complete | confidence, conflict groups, limitations, connector reports | `npm run test:connectors && npm run test:e2e` | Absence of a conflict is not evidence of exhaustive matching. |
+| R16 finance-ready entities and histories | Complete | project, phase, organization and ownership schemas | `npm run verify:data` | Financing transactions are not modeled in V1. |
+| R17 no V1 finance-facing behavior | Complete | V1 routes and components; future-financing interface boundary | `npm run test:e2e` | No advice, ranking, funding or money movement. |
+| R18 finance compatibility does not delay V1 | Complete | nullable/independent ownership and phase relationships | `npm run verify` | Missing future-finance data is not a publication gate. |
 
 ## `PROMPT.md` migration map
 
