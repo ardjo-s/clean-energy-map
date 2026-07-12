@@ -1,7 +1,7 @@
 # Verification and Provenance Contract
 
 Status: normative evidence contract  
-Version: 1.0.0  
+Version: 1.1.0
 Last reviewed: 2026-07-12  
 Contract changes require: schema/version impact review, migration plan, public change entry
 
@@ -328,6 +328,8 @@ No silent manual correction only in the interface is allowed.
 A source publication date, access date, observation date, calculation time, and verification date remain separate. Stale verification is visible and may downgrade coverage or verified-wave status under the [publication criteria](verified-wave-publication-criteria.md).
 
 ## Minimum audit invariant
+
+Release 2024.2 keeps calculation input observations and sourced ownership assertions in the browser dataset. The full download remains authoritative for every facility field, project, and phase observation. Compact records link to that full release instead of silently presenting their source pointers as complete field evidence.
 
 For any public facility fact, country percentage, aggregate, classification, geometry, ownership assertion, or coverage claim, the system MUST answer:
 

@@ -1,19 +1,19 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { AtlasDataset } from "../lib/domain/schemas";
-import { validateDatasetIntegrity } from "../lib/atlas/integrity";
+import { atlasDatasetSchema } from "../lib/domain/schemas";
+import { validateBrowserDatasetIntegrity, validateDatasetIntegrity } from "../lib/atlas/integrity";
 
 async function main() {
   const publicPath = path.join(process.cwd(), "public", "data", "atlas-v1.json");
   const fullPath = path.join(process.cwd(), "public", "data", "downloads", "atlas-v1-full.json");
-  const compact = JSON.parse(await readFile(publicPath, "utf8")) as AtlasDataset;
-  const full = JSON.parse(await readFile(fullPath, "utf8")) as AtlasDataset;
-  if (full.release.id !== compact.release.id || full.facilities.length !== compact.facilities.length) {
+  const compact = atlasDatasetSchema.parse(JSON.parse(await readFile(publicPath, "utf8")));
+  const full = atlasDatasetSchema.parse(JSON.parse(await readFile(fullPath, "utf8")));
+  if (full.release.id !== compact.release.id || full.facilities.length !== compact.facilities.length || full.geographies.length !== compact.geographies.length) {
     console.error("compact_release_mismatch: Browser and full evidence releases differ.");
     process.exit(1);
   }
 
-  const issues = validateDatasetIntegrity(full);
+  const issues = [...validateDatasetIntegrity(full), ...validateBrowserDatasetIntegrity(compact)];
   if (issues.length) {
     console.error(issues.map((issue) => `${issue.code}${issue.entityId ? ` [${issue.entityId}]` : ""}: ${issue.message}`).join("\n"));
     process.exit(1);
