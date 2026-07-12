@@ -1,20 +1,21 @@
 import { expect, test } from "@playwright/test";
 
+const sourceBackedFacility = { id: "us-eia-1-onshore_wind", officialName: "Sand Point" } as const;
+
 test("loads only source-backed records and restores selected facility from URL", async ({ page }) => {
   const responsePromise = page.waitForResponse((response) => response.url().endsWith("/data/atlas-v1.json"));
   await page.goto("/");
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
-  const dataset = await response.json();
   await expect(page.getByText("Coverage varies by geography")).toBeVisible();
-  const facility = dataset.facilities[0];
-  test.skip(!facility, "Published dataset has no facilities.");
-  await page.getByLabel("Search facilities, countries, operators").fill(facility.officialName);
-  await page.getByRole("button", { name: new RegExp(facility.officialName) }).click();
-  await expect(page.getByRole("heading", { name: facility.officialName })).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`facility=${encodeURIComponent(facility.id)}`));
+  const mobileSearch = page.getByRole("button", { name: "Search", exact: true });
+  if (await mobileSearch.isVisible()) await mobileSearch.click();
+  await page.getByLabel("Search facilities, countries, operators").fill(sourceBackedFacility.officialName);
+  await page.getByRole("button", { name: new RegExp(sourceBackedFacility.officialName) }).click();
+  await expect(page.getByRole("heading", { name: sourceBackedFacility.officialName })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`facility=${encodeURIComponent(sourceBackedFacility.id)}`));
   await page.reload();
-  await expect(page.getByRole("heading", { name: facility.officialName })).toBeVisible();
+  await expect(page.getByRole("heading", { name: sourceBackedFacility.officialName })).toBeVisible();
 });
 
 test("filters are shareable and mobile has no horizontal overflow", async ({ page }) => {
@@ -31,11 +32,10 @@ test("filters are shareable and mobile has no horizontal overflow", async ({ pag
 test("country indicators expose calculation lineage", async ({ page }) => {
   const responsePromise = page.waitForResponse((response) => response.url().endsWith("/data/atlas-v1.json"));
   await page.goto("/");
-  const dataset = await (await responsePromise).json();
-  const indicator = dataset.countryIndicators[0];
-  test.skip(!indicator, "Published dataset has no country indicators.");
-  await page.getByLabel("Geography").selectOption(indicator.countryCode);
-  await expect(page.getByText("Numerator:")).toBeVisible();
-  await expect(page.getByText("Denominator:")).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`geography=${indicator.countryCode}`));
+  expect((await responsePromise).ok()).toBeTruthy();
+  await page.getByLabel("Geography").selectOption("US");
+  const countryProfile = page.locator(".country-profile");
+  await expect(countryProfile).toContainText("Numerator:");
+  await expect(countryProfile).toContainText("Denominator:");
+  await expect(page).toHaveURL(/geography=US/);
 });
