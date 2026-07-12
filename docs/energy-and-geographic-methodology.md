@@ -1,7 +1,7 @@
 # Energy and Geographic Methodology
 
 Status: normative method  
-Version: 1.0.0  
+Version: 1.1.0
 Last reviewed: 2026-07-12  
 Method changes require: version increment, recalculation impact assessment, public change entry
 
@@ -354,6 +354,10 @@ For disputed or overlapping areas:
 High-seas records remain high seas unless authoritative evidence establishes another jurisdiction. A map overlay or spatial join is a derived claim and must retain calculation lineage.
 
 ## Method evolution
+
+### Release 2024.2 implementation note
+
+The target roadmap is represented as an explicit geography × technology coverage matrix. Cells without a release-ready source set are `withheld` and `not_assessed`; an empty map is never interpreted as zero infrastructure. EIA-860 owner shares are preserved as decimal source observations and normalized to percentages by multiplying by 100. Missing owner rows never imply operator ownership. The previous 1.0.0 method remains listed in dataset change history.
 
 Any change to classification, technology mapping, biomass gates, country formulas, lifecycle mappings, units, or geographic attribution MUST:
 

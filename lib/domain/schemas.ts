@@ -16,6 +16,12 @@ export const coverageStatusSchema = z.enum([
   "unavailable",
 ]);
 
+export const coveragePublicationStatusSchema = z.enum([
+  "verified_wave",
+  "candidate",
+  "withheld",
+]);
+
 export const lifecycleStateSchema = z.enum([
   "operating",
   "under_construction",
@@ -75,6 +81,12 @@ export const precisionSchema = z.enum([
   "locality_only",
   "unknown",
 ]);
+
+export const geographySchema = z.object({
+  code: z.string().min(1),
+  name: z.string().min(1),
+  type: z.enum(["country", "region", "ocean_area"]),
+});
 
 export const sourceSchema = z.object({
   id: z.string().min(1),
@@ -337,6 +349,7 @@ export const coverageAssessmentSchema = z.object({
   id: z.string().min(1),
   geographyCode: z.string().min(1),
   technology: technologySchema.nullable(),
+  publicationStatus: coveragePublicationStatusSchema,
   status: coverageStatusSchema,
   scope: z.string().min(1),
   measuredCoverage: z
@@ -352,7 +365,7 @@ export const coverageAssessmentSchema = z.object({
   facilitySourcesPresent: z.boolean(),
   reproducibleMethod: z.boolean(),
   visibleLimitations: z.array(z.string()).min(1),
-  sourceIds: z.array(z.string()).min(1),
+  sourceIds: z.array(z.string()),
   assessedAt: z.string().datetime(),
 });
 
@@ -372,12 +385,19 @@ export const datasetReleaseSchema = z.object({
   buildId: z.string().min(1),
   sourceSnapshotDates: z.record(z.string(), z.string()),
   changeSummary: z.string().min(1),
+  changeHistory: z.array(z.object({
+    version: z.string().min(1),
+    releasedAt: z.string().datetime(),
+    summary: z.string().min(1),
+  })).min(1),
+  correctionsUrl: z.string().url(),
   limitations: z.array(z.string()).min(1),
 });
 
 export const atlasDatasetSchema = z.object({
   release: datasetReleaseSchema,
   methodologyReleases: z.array(methodologyReleaseSchema).min(1),
+  geographies: z.array(geographySchema).min(1),
   sources: z.array(sourceSchema).min(1),
   observations: z.array(observationSchema),
   organizations: z.array(organizationSchema),
@@ -393,8 +413,12 @@ export const atlasDatasetSchema = z.object({
 
 export type Classification = z.infer<typeof classificationSchema>;
 export type Technology = z.infer<typeof technologySchema>;
+export type EnergyRole = z.infer<typeof energyRoleSchema>;
+export type Confidence = z.infer<typeof confidenceSchema>;
 export type Facility = z.infer<typeof facilitySchema>;
 export type Source = z.infer<typeof sourceSchema>;
 export type AtlasDataset = z.infer<typeof atlasDatasetSchema>;
 export type CountryIndicator = z.infer<typeof countryIndicatorSchema>;
 export type CoverageAssessment = z.infer<typeof coverageAssessmentSchema>;
+export type CoveragePublicationStatus = z.infer<typeof coveragePublicationStatusSchema>;
+export type Geography = z.infer<typeof geographySchema>;

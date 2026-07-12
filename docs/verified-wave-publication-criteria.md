@@ -1,7 +1,7 @@
 # Verified-Wave Publication Criteria
 
 Status: normative release gate  
-Version: 1.0.0  
+Version: 1.1.0
 Last reviewed: 2026-07-12  
 Applies to: every V1 geography, dataset release, and production publication
 
@@ -297,6 +297,8 @@ While meaningful in-scope improvements remain:
 Do not optimize this loop for record count. A new source that improves provenance, coverage measurement, or correction safety may be more valuable than many weak markers.
 
 ## Publication decision
+
+The machine-readable `publicationStatus` is `verified_wave`, `candidate`, or `withheld`. Only `verified_wave` can represent a passed national baseline. Release 2024.2 publishes the United States as the sole verified wave; every other target cell is withheld until its own evidence gate passes.
 
 The release steward records `PASS`, `PARTIAL`, or `WITHHOLD` for every gate with evidence links. Any `FAIL`, missing evidence, or unresolved material risk prevents `verified wave` status.
 

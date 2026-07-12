@@ -24,10 +24,98 @@ NLR_XLSX = ROOT / "data/raw/nlr/EF_Table_FINAL.xlsx"
 OUTPUT = ROOT / "public/data/atlas-v1.json"
 FULL_OUTPUT = ROOT / "public/data/downloads/atlas-v1-full.json"
 RAW_ROWS = ROOT / "public/data/downloads/eia860-relevant-generators.jsonl"
+RAW_OWNERSHIP_ROWS = ROOT / "public/data/downloads/eia860-relevant-ownership.jsonl"
 RETRIEVED_AT = "2026-07-12T19:00:00Z"
-METHOD_VERSION = "1.0.0"
+METHOD_VERSION = "1.1.0"
+DATASET_VERSION = "2024.2"
+CORRECTIONS_URL = "https://github.com/ardjo-s/clean-energy-map/issues/new?labels=data-correction"
 EXPECTED_EIA_SHA256 = "0aaae04812cd4ab87a3e346bdf93848a3cc15053fd4dc2a4cf82d2aeac95f12b"
 EXPECTED_NLR_SHA256 = "ef4885c8519ff7fbcb5147842dc0549d7b9955b28eeee23609ad9032a37bd5cb"
+
+ALL_TECHNOLOGIES = (
+    "solar_photovoltaic",
+    "concentrated_solar_power",
+    "solar_thermal",
+    "onshore_wind",
+    "offshore_wind",
+    "hydropower_run_of_river",
+    "hydropower_reservoir",
+    "hydropower_unspecified",
+    "geothermal",
+    "marine_ocean",
+    "nuclear_fission",
+    "ambient_renewable_heat",
+    "recovered_heat",
+    "solid_biomass_residues",
+    "battery_storage",
+    "pumped_hydro_storage",
+    "thermal_storage",
+    "hydrogen_storage",
+    "other_storage",
+    "hydrogen_carrier",
+    "ammonia_carrier",
+    "synthetic_fuel_carrier",
+)
+
+TARGET_GEOGRAPHIES = (
+    ("US", "United States", "country"),
+    ("CN", "China", "country"),
+    ("IN", "India", "country"),
+    ("JP", "Japan", "country"),
+    ("RU", "Russia", "country"),
+    ("AU", "Australia", "country"),
+    ("AD", "Andorra", "country"),
+    ("AL", "Albania", "country"),
+    ("AM", "Armenia", "country"),
+    ("AT", "Austria", "country"),
+    ("AZ", "Azerbaijan", "country"),
+    ("BA", "Bosnia and Herzegovina", "country"),
+    ("BE", "Belgium", "country"),
+    ("BG", "Bulgaria", "country"),
+    ("BY", "Belarus", "country"),
+    ("CH", "Switzerland", "country"),
+    ("CY", "Cyprus", "country"),
+    ("CZ", "Czechia", "country"),
+    ("DE", "Germany", "country"),
+    ("DK", "Denmark", "country"),
+    ("EE", "Estonia", "country"),
+    ("ES", "Spain", "country"),
+    ("FI", "Finland", "country"),
+    ("FR", "France", "country"),
+    ("GB", "United Kingdom", "country"),
+    ("GE", "Georgia", "country"),
+    ("GR", "Greece", "country"),
+    ("HR", "Croatia", "country"),
+    ("HU", "Hungary", "country"),
+    ("IE", "Ireland", "country"),
+    ("IS", "Iceland", "country"),
+    ("IT", "Italy", "country"),
+    ("LI", "Liechtenstein", "country"),
+    ("LT", "Lithuania", "country"),
+    ("LU", "Luxembourg", "country"),
+    ("LV", "Latvia", "country"),
+    ("MC", "Monaco", "country"),
+    ("MD", "Moldova", "country"),
+    ("ME", "Montenegro", "country"),
+    ("MK", "North Macedonia", "country"),
+    ("MT", "Malta", "country"),
+    ("NL", "Netherlands", "country"),
+    ("NO", "Norway", "country"),
+    ("PL", "Poland", "country"),
+    ("PT", "Portugal", "country"),
+    ("RO", "Romania", "country"),
+    ("RS", "Serbia", "country"),
+    ("SE", "Sweden", "country"),
+    ("SI", "Slovenia", "country"),
+    ("SK", "Slovakia", "country"),
+    ("SM", "San Marino", "country"),
+    ("TR", "Türkiye", "country"),
+    ("UA", "Ukraine", "country"),
+    ("VA", "Vatican City", "country"),
+    ("XK", "Kosovo", "country"),
+    ("AFRICA", "African jurisdictions", "region"),
+    ("OCEAN", "Relevant ocean infrastructure", "ocean_area"),
+)
 
 
 @dataclass(frozen=True)
@@ -224,7 +312,7 @@ def build() -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="atlas-eia-") as temp:
         temp_path = Path(temp)
         with zipfile.ZipFile(EIA_ZIP) as archive:
-            for member in ["2___Plant_Y2024.xlsx", "3_1_Generator_Y2024.xlsx", "3_4_Energy_Storage_Y2024.xlsx"]:
+            for member in ["2___Plant_Y2024.xlsx", "3_1_Generator_Y2024.xlsx", "3_4_Energy_Storage_Y2024.xlsx", "4___Owner_Y2024.xlsx"]:
                 archive.extract(member, temp_path)
 
         plants = {int(row["Plant Code"]): row for row in iter_xlsx_records(temp_path / "2___Plant_Y2024.xlsx") if isinstance(row.get("Plant Code"), (int, float))}
@@ -234,12 +322,32 @@ def build() -> dict[str, Any]:
             if isinstance(row.get("Plant Code"), (int, float))
         }
         relevant = [row for row in iter_xlsx_records(temp_path / "3_1_Generator_Y2024.xlsx") if row.get("Technology") in TECH_RULES]
+        owner_rows = [
+            row
+            for row in iter_xlsx_records(temp_path / "4___Owner_Y2024.xlsx")
+            if isinstance(row.get("Plant Code"), (int, float)) and row.get("Generator ID") is not None
+        ]
+
+    relevant_generator_keys = {(int(row["Plant Code"]), str(row["Generator ID"])) for row in relevant}
+    relevant_ownership = [
+        row
+        for row in owner_rows
+        if (int(row["Plant Code"]), str(row["Generator ID"])) in relevant_generator_keys
+    ]
+    ownership_by_generator: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in relevant_ownership:
+        ownership_by_generator[(int(row["Plant Code"]), str(row["Generator ID"]))].append(row)
 
     RAW_ROWS.parent.mkdir(parents=True, exist_ok=True)
     with RAW_ROWS.open("w", encoding="utf-8") as stream:
         for row in relevant:
             kept = {key: row.get(key) for key in ["Utility ID", "Utility Name", "Plant Code", "Plant Name", "State", "County", "Generator ID", "Technology", "Prime Mover", "Status", "Nameplate Capacity (MW)", "Summer Capacity (MW)", "Operating Month", "Operating Year", "Energy Source 1"]}
             kept["source"] = "EIA-860 final 2024, 3_1_Generator_Y2024.xlsx, Operable"
+            stream.write(json.dumps(kept, sort_keys=True, separators=(",", ":")) + "\n")
+    with RAW_OWNERSHIP_ROWS.open("w", encoding="utf-8") as stream:
+        for row in relevant_ownership:
+            kept = {key: row.get(key) for key in ["Plant Code", "Plant Name", "Generator ID", "Owner Name", "Ownership ID", "Percent Owned"]}
+            kept["source"] = "EIA-860 final 2024, 4___Owner_Y2024.xlsx"
             stream.write(json.dumps(kept, sort_keys=True, separators=(",", ":")) + "\n")
 
     groups: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
@@ -253,6 +361,7 @@ def build() -> dict[str, Any]:
     facilities: list[dict[str, Any]] = []
     projects_by_plant: dict[int, dict[str, Any]] = {}
     phases: list[dict[str, Any]] = []
+    ownership: list[dict[str, Any]] = []
     organizations: dict[str, dict[str, Any]] = {}
     capacity_observation_ids: dict[str, list[str]] = defaultdict(list)
 
@@ -300,18 +409,82 @@ def build() -> dict[str, Any]:
 
         observations.extend(group_observations)
         capacity_observation_ids[normalized_tech].append(capacity_obs["id"])
+        if operator_id not in organizations:
+            operator_name = str(rows[0]["Utility Name"])
+            operator_obs = observation("src-eia-860-2024", "organization", operator_id, "official_name", operator_name, operator_name)
+            observations.append(operator_obs)
+            organizations[operator_id] = {
+                "id": operator_id,
+                "officialName": operator_name,
+                "alternateNames": [],
+                "organizationType": "utility",
+                "jurisdictionCode": "US",
+                "externalIdentifiers": {"eiaUtilityId": str(int(rows[0]["Utility ID"]))},
+                "sourceObservationIds": [operator_obs["id"]],
+            }
         phase_ids: list[str] = []
+        facility_ownership_ids: list[str] = []
         for row in sorted(rows, key=lambda item: str(item["Generator ID"])):
             phase_id = stable_id("phase", plant_code, row["Generator ID"])
             phase_ids.append(phase_id)
             lifecycle = STATUS_MAP.get(str(row["Status"]), "unknown")
             phases.append({"id": phase_id, "projectId": project_id, "name": f"Generator {row['Generator ID']}", "facilityIds": [facility_id], "lifecycleState": lifecycle, "stateDate": None, "sourceObservationIds": [status_obs["id"], capacity_obs["id"]]})
+            for owner_row in ownership_by_generator.get((plant_code, str(row["Generator ID"])), []):
+                owner_name = str(owner_row.get("Owner Name") or "").strip()
+                if not owner_name:
+                    continue
+                external_owner_id = owner_row.get("Ownership ID")
+                if isinstance(external_owner_id, (int, float)):
+                    owner_id = f"us-eia-org-{int(external_owner_id)}"
+                    external_identifiers = {"eiaUtilityId": str(int(external_owner_id))}
+                else:
+                    owner_id = stable_id("us-eia-owner-org", plant_code, row["Generator ID"], owner_name)
+                    external_identifiers = {}
+                if owner_id not in organizations:
+                    owner_name_obs = observation("src-eia-860-2024", "organization", owner_id, "official_name", owner_name, owner_name)
+                    observations.append(owner_name_obs)
+                    organizations[owner_id] = {
+                        "id": owner_id,
+                        "officialName": owner_name,
+                        "alternateNames": [],
+                        "organizationType": "utility" if external_identifiers else "owner",
+                        "jurisdictionCode": "US",
+                        "externalIdentifiers": external_identifiers,
+                        "sourceObservationIds": [owner_name_obs["id"]],
+                    }
+                elif owner_name != organizations[owner_id]["officialName"] and owner_name not in organizations[owner_id]["alternateNames"]:
+                    organizations[owner_id]["alternateNames"].append(owner_name)
+                ownership_id = stable_id("ownership", facility_id, phase_id, owner_id, "2024")
+                raw_share = owner_row.get("Percent Owned")
+                normalized_share = round(float(raw_share) * 100, 8) if isinstance(raw_share, (int, float)) and 0 <= float(raw_share) <= 1 else None
+                share_obs = observation(
+                    "src-eia-860-2024",
+                    "ownership",
+                    ownership_id,
+                    "share_percent",
+                    raw_share,
+                    normalized_share,
+                    note="EIA reports Percent Owned as a decimal fraction; normalized percent equals raw value × 100." if normalized_share is not None else "Ownership share was not normalized because the source value was absent or outside the documented decimal range.",
+                )
+                share_obs["rawUnit"] = "fraction"
+                observations.append(share_obs)
+                ownership.append({
+                    "id": ownership_id,
+                    "facilityId": facility_id,
+                    "phaseId": phase_id,
+                    "organizationId": owner_id,
+                    "role": "owner",
+                    "sharePercent": normalized_share,
+                    "effectiveFrom": None,
+                    "effectiveTo": None,
+                    "sourceObservationIds": [share_obs["id"]],
+                })
+                facility_ownership_ids.append(ownership_id)
 
         if project_id not in projects_by_plant:
             projects_by_plant[plant_code] = {"id": project_id, "officialName": plant_name, "alternateNames": [], "facilityIds": [], "phaseIds": [], "sourceObservationIds": [identity["id"]]}
         projects_by_plant[plant_code]["facilityIds"].append(facility_id)
         projects_by_plant[plant_code]["phaseIds"].extend(phase_ids)
-        organizations.setdefault(operator_id, {"id": operator_id, "officialName": str(rows[0]["Utility Name"]), "alternateNames": [], "organizationType": "operator", "jurisdictionCode": "US", "externalIdentifiers": {"eiaUtilityId": str(int(rows[0]["Utility ID"]))}, "sourceObservationIds": [identity["id"]]})
 
         capacities: list[dict[str, Any]] = []
         if rule.role == "storage":
@@ -326,7 +499,7 @@ def build() -> dict[str, Any]:
         else:
             capacities.append({"kind": "electrical_mw", "value": nameplate, "status": "installed", "sourceObservationIds": [capacity_obs["id"]]})
 
-        limitations = ["EIA-860 covers generators at plants with at least 1 MW combined nameplate capacity; smaller systems are not individually mapped.", "Coordinates are publisher-reported plant observations and are displayed as approximate, not survey-grade.", "No facility-specific lifecycle intensity has been established."]
+        limitations = ["EIA-860 covers generators at plants with at least 1 MW combined nameplate capacity; smaller systems are not individually mapped.", "Coordinates are publisher-reported plant observations and are displayed as approximate, not survey-grade.", "No facility-specific lifecycle intensity has been established.", "Ownership is shown only when EIA reports a joint or third-party owner; absence is never interpreted as 100% operator ownership."]
         if normalized_tech == "offshore_wind":
             limitations.append("EIA-860 does not provide the maritime-zone evidence required to distinguish territorial waters, EEZ, high seas, or disputed areas; context remains unknown.")
         if rule.classification in {"conditional", "unknown", "excluded"}:
@@ -352,7 +525,7 @@ def build() -> dict[str, Any]:
             "location": location,
             "jurisdiction": {"countryCode": "US", "admin1": str(plant.get("State") or "") or None, "context": "unknown" if normalized_tech == "offshore_wind" else "land", "disputed": False, "evidenceObservationIds": [state_obs["id"]]},
             "operatorOrganizationIds": [operator_id],
-            "ownershipIds": [],
+            "ownershipIds": sorted(facility_ownership_ids),
             "sourceObservationIds": [item["id"] for item in group_observations],
             "conflicts": [],
             "limitations": limitations,
@@ -457,36 +630,87 @@ def build() -> dict[str, Any]:
     mapped_mw = sum(sum(capacity_item["value"] for capacity_item in facility["capacities"] if capacity_item["kind"] in {"electrical_mw", "storage_power_mw"}) for facility in mapped)
     total_mw = sum(sum(capacity_item["value"] for capacity_item in facility["capacities"] if capacity_item["kind"] in {"electrical_mw", "storage_power_mw"}) for facility in facilities)
     normalization = len(relevant)
+    geographies = [{"code": code, "name": name, "type": geography_type} for code, name, geography_type in TARGET_GEOGRAPHIES]
     coverage = [{
-        "id": "coverage-us-national-electricity-2024", "geographyCode": "US", "technology": None, "status": "substantial",
+        "id": "coverage-us-national-electricity-2024", "geographyCode": "US", "technology": None, "publicationStatus": "verified_wave", "status": "substantial",
         "scope": "Verified national electricity baseline; EIA-860 utility-scale facilities, EIA national generation/capacity totals, and explicit distributed-resource gap.",
         "measuredCoverage": {"numerator": normalization, "denominator": normalization, "unit": "EIA-860 relevant operable generator rows", "method": "Relevant source rows normalized into generator phases; no row dropped.", "resultPercent": 100},
         "authoritativeBaseline": True, "facilitySourcesPresent": True, "reproducibleMethod": True,
-        "visibleLimitations": [f"{len(facilities) - len(mapped):,} facility-technology records are unplotted because a valid publisher-reported coordinate was unavailable.", f"Mapped nameplate power coverage is {mapped_mw / total_mw * 100:.2f}% for the included facility scope.", "Systems below the EIA-860 plant threshold are represented only in national aggregates where EIA publishes them; no coordinates are invented.", "Heat infrastructure, total energy supply, final energy consumption, complete retirement history, and maritime-zone geometry are not assessed in this release.", "Facility generation from EIA-923 is a prioritized next ingestion and is not inferred from capacity."],
+        "visibleLimitations": [f"{len(facilities) - len(mapped):,} facility-technology records are unplotted because a valid publisher-reported coordinate was unavailable.", f"Mapped nameplate power coverage is {mapped_mw / total_mw * 100:.2f}% for the included facility scope.", "Systems below the EIA-860 plant threshold are represented only in national aggregates where EIA publishes them; no coordinates are invented.", "Heat infrastructure, total energy supply, final energy consumption, complete retirement history, and maritime-zone geometry are not assessed in this release.", "Facility generation from EIA-923 is a prioritized next ingestion and is not inferred from capacity.", "Ownership rows cover only EIA-reported joint or third-party interests; missing ownership is not inferred."],
         "sourceIds": ["src-eia-860-2024", "src-eia-epm-1-1-2024", "src-eia-epm-1-1a-2024", "src-eia-epa-4-2a-2024"], "assessedAt": RETRIEVED_AT,
     }]
-    for technology in sorted({facility["technology"] for facility in facilities}):
+    published_us_technologies = {facility["technology"] for facility in facilities}
+    for technology in sorted(published_us_technologies):
         subset = [facility for facility in facilities if facility["technology"] == technology]
         subset_mapped = [facility for facility in subset if facility["location"]["geometryType"] != "unplotted"]
         coverage.append({
-            "id": f"coverage-us-{technology}-2024", "geographyCode": "US", "technology": technology, "status": "substantial" if subset_mapped else "sparse",
+            "id": f"coverage-us-{technology}-2024", "geographyCode": "US", "technology": technology, "publicationStatus": "verified_wave", "status": "substantial" if subset_mapped else "sparse",
             "scope": "EIA-860 final 2024 generator inventory within its documented plant threshold.",
             "measuredCoverage": {"numerator": len(subset_mapped), "denominator": len(subset), "unit": "facility-technology records", "method": "Publisher-reported coordinates passed range validation; no geocoded centroids.", "resultPercent": len(subset_mapped) / len(subset) * 100},
             "authoritativeBaseline": True, "facilitySourcesPresent": True, "reproducibleMethod": True,
             "visibleLimitations": ["This coordinate measure does not prove exhaustive coverage below EIA's reporting threshold.", "Reported coordinates are approximate plant observations, not verified footprints."],
             "sourceIds": ["src-eia-860-2024"], "assessedAt": RETRIEVED_AT,
         })
+    for technology in sorted(set(ALL_TECHNOLOGIES) - published_us_technologies):
+        coverage.append({
+            "id": f"coverage-us-{technology}-withheld-2024", "geographyCode": "US", "technology": technology, "publicationStatus": "withheld", "status": "not_assessed",
+            "scope": "Target technology is not assessed in the U.S. 2024.2 verified electricity wave.",
+            "measuredCoverage": None, "authoritativeBaseline": True, "facilitySourcesPresent": False, "reproducibleMethod": False,
+            "visibleLimitations": ["No authoritative facility source for this technology passed the release gate.", "An empty layer means not assessed, not zero infrastructure."],
+            "sourceIds": [], "assessedAt": RETRIEVED_AT,
+        })
+    for code, name, geography_type in TARGET_GEOGRAPHIES:
+        if code == "US":
+            continue
+        base_limitations = [
+            "No authoritative national energy baseline and facility-source set has passed the V1 publication gate.",
+            "No facilities are plotted for this target in release 2024.2; an empty map does not mean zero infrastructure.",
+        ]
+        if geography_type == "ocean_area":
+            base_limitations.append("Territorial waters, EEZ, high-seas, and disputed-area evidence must be sourced before national attribution.")
+        coverage.append({
+            "id": f"coverage-{code.lower()}-national-withheld-2024", "geographyCode": code, "technology": None, "publicationStatus": "withheld", "status": "not_assessed",
+            "scope": f"Target V1 coverage for {name}; publication withheld pending the full national-baseline gate.",
+            "measuredCoverage": None, "authoritativeBaseline": False, "facilitySourcesPresent": False, "reproducibleMethod": False,
+            "visibleLimitations": base_limitations, "sourceIds": [], "assessedAt": RETRIEVED_AT,
+        })
+        for technology in ALL_TECHNOLOGIES:
+            coverage.append({
+                "id": f"coverage-{code.lower()}-{technology}-withheld-2024", "geographyCode": code, "technology": technology, "publicationStatus": "withheld", "status": "not_assessed",
+                "scope": f"Target {technology.replace('_', ' ')} coverage for {name}; no release-ready source set is published.",
+                "measuredCoverage": None, "authoritativeBaseline": False, "facilitySourcesPresent": False, "reproducibleMethod": False,
+                "visibleLimitations": ["Technology coverage has not passed source, licensing, normalization, and measured-coverage review.", "An empty layer means not assessed, not zero infrastructure."],
+                "sourceIds": [], "assessedAt": RETRIEVED_AT,
+            })
 
     build_id = hashlib.sha256(f"{EXPECTED_EIA_SHA256}|{EXPECTED_NLR_SHA256}|{METHOD_VERSION}".encode()).hexdigest()[:16]
     return {
-        "release": {"id": "atlas-v1-us-wave-2024.1", "version": "2024.1", "releasedAt": RETRIEVED_AT, "methodologyReleaseId": "methodology-1.0.0", "buildId": build_id, "sourceSnapshotDates": {item["id"]: item["publicationDate"] or item["accessedAt"] for item in sources}, "changeSummary": "Initial verified U.S. national electricity baseline and EIA-860 facility wave.", "limitations": coverage[0]["visibleLimitations"]},
-        "methodologyReleases": [{"id": "methodology-1.0.0", "version": METHOD_VERSION, "releasedAt": RETRIEVED_AT, "documentPath": "docs/energy-and-geographic-methodology.md", "changeSummary": "Initial four-state lifecycle, geography, aggregation, and coverage method."}],
+        "release": {
+            "id": "atlas-v1-us-wave-2024.2",
+            "version": DATASET_VERSION,
+            "releasedAt": RETRIEVED_AT,
+            "methodologyReleaseId": "methodology-1.1.0",
+            "buildId": build_id,
+            "sourceSnapshotDates": {item["id"]: item["publicationDate"] or item["accessedAt"] for item in sources},
+            "changeSummary": "Adds explicit target-geography coverage states, calculation observations in the web release, and source-backed EIA ownership relationships.",
+            "changeHistory": [
+                {"version": "2024.1", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Initial verified U.S. national electricity baseline and EIA-860 facility wave."},
+                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Added withheld target coverage, explicit publication status, source-backed ownership, and stronger browser traceability."},
+            ],
+            "correctionsUrl": CORRECTIONS_URL,
+            "limitations": coverage[0]["visibleLimitations"],
+        },
+        "methodologyReleases": [
+            {"id": "methodology-1.0.0", "version": "1.0.0", "releasedAt": "2026-07-12T19:00:00Z", "documentPath": "docs/energy-and-geographic-methodology.md", "changeSummary": "Initial four-state lifecycle, geography, aggregation, and coverage method."},
+            {"id": "methodology-1.1.0", "version": METHOD_VERSION, "releasedAt": RETRIEVED_AT, "documentPath": "docs/energy-and-geographic-methodology.md", "changeSummary": "Made verified-wave status explicit, added full target coverage matrix, and normalized EIA owner shares without inference."},
+        ],
+        "geographies": geographies,
         "sources": sources,
         "observations": sorted(observations, key=lambda item: item["id"]),
         "organizations": sorted(organizations.values(), key=lambda item: item["id"]),
         "projects": sorted(projects_by_plant.values(), key=lambda item: item["id"]),
         "phases": sorted(phases, key=lambda item: item["id"]),
-        "ownership": [],
+        "ownership": sorted(ownership, key=lambda item: item["id"]),
         "lifecycleEvidence": make_lifecycle_evidence(lifecycle_ranges()),
         "facilities": sorted(facilities, key=lambda item: item["id"]),
         "countryIndicators": country_indicators,
@@ -511,7 +735,7 @@ def main() -> None:
             "id": f"compact-{item['id']}",
             "sourceId": item["id"],
             "entityType": "methodology",
-            "entityId": "methodology-1.0.0",
+            "entityId": "methodology-1.1.0",
             "field": "source_pointer",
             "rawValue": item["id"],
             "rawUnit": None,
@@ -525,7 +749,6 @@ def main() -> None:
     compact_facilities = []
     for facility in data["facilities"]:
         compact = dict(facility)
-        compact["phaseIds"] = []
         compact["sourceObservationIds"] = ["compact-src-eia-860-2024"]
         if compact["technology"] == "nuclear_fission":
             compact["sourceObservationIds"].append("compact-src-nrc-power-reactors")
@@ -535,12 +758,31 @@ def main() -> None:
         if compact["technology"] == "offshore_wind":
             compact["limitations"].append("Maritime-zone context is not established by EIA-860 and remains unknown.")
         compact_facilities.append(compact)
+    calculation_observation_ids = {
+        observation_id
+        for calculation in data["calculations"]
+        for observation_id in calculation["inputObservationIds"]
+    }
+    ownership_observation_ids = {
+        observation_id
+        for relationship in data["ownership"]
+        for observation_id in relationship["sourceObservationIds"]
+    }
+    organization_observation_ids = {
+        observation_id
+        for organization in data["organizations"]
+        for observation_id in organization["sourceObservationIds"]
+    }
+    browser_evidence = [
+        item
+        for item in data["observations"]
+        if item["id"] in calculation_observation_ids or item["id"] in ownership_observation_ids or item["id"] in organization_observation_ids
+    ]
     compact_data = {
         **data,
-        "observations": source_pointers,
+        "observations": source_pointers + browser_evidence,
         "projects": [],
         "phases": [],
-        "ownership": [],
         "facilities": compact_facilities,
     }
     compact_encoded = json.dumps(compact_data, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
