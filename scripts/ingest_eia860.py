@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-import hashlib
 import argparse
+import hashlib
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -729,6 +730,36 @@ def build() -> dict[str, Any]:
     }
 
 
+def activate_staged(staged: dict[Path, Path], order: tuple[Path, ...]) -> None:
+    """Replace a release set and restore every destination if activation fails."""
+    backups: dict[Path, Path | None] = {}
+    replaced: list[Path] = []
+    try:
+        for destination in order:
+            if destination.exists():
+                descriptor, backup_name = tempfile.mkstemp(prefix=f".{destination.name}-backup-", dir=destination.parent)
+                os.close(descriptor)
+                Path(backup_name).write_bytes(destination.read_bytes())
+                backups[destination] = Path(backup_name)
+            else:
+                backups[destination] = None
+        for destination in order:
+            staged[destination].replace(destination)
+            replaced.append(destination)
+    except Exception:
+        for destination in reversed(replaced):
+            backup = backups[destination]
+            if backup is None:
+                destination.unlink(missing_ok=True)
+            else:
+                shutil.copy2(backup, destination)
+        raise
+    finally:
+        for backup in backups.values():
+            if backup is not None:
+                backup.unlink(missing_ok=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--activate", action="store_true", help="Replace the checked-in public release after staging the complete candidate.")
@@ -815,8 +846,7 @@ def main(argv: list[str] | None = None) -> None:
                 stream.write(content)
             staged[destination] = Path(name)
         if args.activate:
-            for destination in (RAW_ROWS, RAW_OWNERSHIP_ROWS, FULL_OUTPUT, OUTPUT):
-                staged[destination].replace(destination)
+            activate_staged(staged, (RAW_ROWS, RAW_OWNERSHIP_ROWS, FULL_OUTPUT, OUTPUT))
     finally:
         for path in staged.values():
             path.unlink(missing_ok=True)

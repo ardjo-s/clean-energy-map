@@ -9,6 +9,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -269,6 +270,8 @@ def parse_number(value: Any, field: str) -> float | None:
         number = float(str(value).replace(",", "").strip())
     except ValueError as cause:
         raise ValueError(f"Invalid numeric {field}: {value!r}") from cause
+    if not math.isfinite(number):
+        raise ValueError(f"Invalid numeric {field}: {value!r}")
     if not (-90 <= number <= 90) and field == "latitude":
         raise ValueError(f"Invalid latitude: {number}")
     if not (-180 <= number <= 180) and field == "longitude":
@@ -335,12 +338,20 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
             rejected_rows.append({"row": index, "record_key": gem_id, "reason": "duplicate_stable_identifier"})
             continue
         seen.add(gem_id)
+        try:
+            capacity_mw = parse_number(pick(row, "Capacity (MW)", "capacity_mw"), "capacity_mw")
+            latitude = parse_number(pick(row, "Latitude", "latitude"), "latitude")
+            longitude = parse_number(pick(row, "Longitude", "longitude"), "longitude")
+        except ValueError as error:
+            counts["rejected"] += 1
+            rejected_rows.append({"row": index, "record_key": gem_id, "reason": "invalid_numeric_value", "detail": str(error)})
+            continue
         values = {
             "gem_unit_id": str(gem_id),
             "name": pick(row, "Project name", "Plant name", "name"),
             "technology": technology,
             "status": pick(row, "Status", "status"),
-            "capacity_mw": parse_number(pick(row, "Capacity (MW)", "capacity_mw"), "capacity_mw"),
+            "capacity_mw": capacity_mw,
             "start_date": pick(row, "Start year", "start_date"),
             "retirement_date": pick(row, "Retired year", "retirement_date"),
             "owner": pick(row, "Owner", "owner"),
@@ -372,8 +383,6 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
         record["match_state"] = match_state
         record["match_method"] = "exact_external_identifier" if exact else "candidate_only_no_merge"
         precision = str(values.get("location_precision", "")).casefold()
-        latitude = parse_number(pick(row, "Latitude", "latitude"), "latitude")
-        longitude = parse_number(pick(row, "Longitude", "longitude"), "longitude")
         if latitude is not None and longitude is not None and precision in {"exact", "precise"}:
             location_values = {"latitude": latitude, "longitude": longitude}
             location_items = [observation(meta, str(gem_id), key, value, "degrees") for key, value in location_values.items()]
@@ -413,16 +422,26 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
             rejected_rows.append({"row": row_number, "record_key": key, "reason": "duplicate_stable_identifier"})
             continue
         seen.add(key)
-        values = {"territory": "USA", "period": "2024", "indicator": series, "value": float(value), "unit": "TWh", "method": "Ember yearly electricity data"}
+        try:
+            numeric_value = parse_number(value, "generation_twh")
+        except ValueError as error:
+            counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "record_key": key, "reason": "invalid_numeric_value", "detail": str(error)})
+            continue
+        if numeric_value is None:
+            counts["rejected"] += 1
+            rejected_rows.append({"row": row_number, "record_key": key, "reason": "missing_numeric_value"})
+            continue
+        values = {"territory": "USA", "period": "2024", "indicator": series, "value": numeric_value, "unit": "TWh", "method": "Ember yearly electricity data"}
         record, items = observed_record(meta, key, values, {"value": "TWh"})
         records.append(record)
         observations.extend(items)
         value_observations[str(series)] = record["field_observation_ids"]["value"]
-        values_by_series[str(series)] = float(value)
+        values_by_series[str(series)] = numeric_value
         counts["added"] += 1
         if series in {"Total", "Total Generation"}:
             value_obs = record["field_observation_ids"]["value"]
-            calculations.append({"id": stable_id("calc", key, value_obs), "formula": "identity(input[0])", "input_observation_ids": [value_obs], "result": float(value), "unit": "TWh"})
+            calculations.append({"id": stable_id("calc", key, value_obs), "formula": "identity(input[0])", "input_observation_ids": [value_obs], "result": numeric_value, "unit": "TWh"})
     reconciliations = []
     full_release = json.loads((ROOT / "public/data/downloads/atlas-v1-full.json").read_text())
     eia_calculation = next(item for item in full_release["calculations"] if item["id"] == "calc-us-electricity-generation-share-2024")
@@ -463,10 +482,22 @@ def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, 
 
 def persist_snapshot(store: Path, raw: bytes, suffix: str, meta: dict[str, Any], normalized: dict[str, Any], dry_run: bool) -> tuple[Path, bool]:
     snapshot = store / "snapshots" / meta["source_id"] / f"{meta['checksum']}-{CONNECTOR_VERSION}"
-    expected = {f"source{suffix}": raw, "manifest.json": canonical_json(meta), "normalized.json": canonical_json(normalized)}
+    source_name = f"source{suffix}"
+    normalized_bytes = canonical_json(normalized)
+    manifest = {**meta, "snapshot_files": {source_name: digest(raw), "normalized.json": digest(normalized_bytes)}}
+    expected = {source_name: raw, "manifest.json": canonical_json(manifest), "normalized.json": normalized_bytes}
     if snapshot.exists():
         actual_names = {item.name for item in snapshot.iterdir() if item.is_file()}
-        if actual_names != set(expected) or any((snapshot / name).read_bytes() != content for name, content in expected.items()):
+        try:
+            stored_manifest = json.loads((snapshot / "manifest.json").read_bytes())
+            stored_hashes = stored_manifest["snapshot_files"]
+        except (OSError, json.JSONDecodeError):
+            stored_manifest = stored_hashes = None
+        except (KeyError, TypeError):
+            stored_hashes = None
+        identity_matches = bool(stored_manifest) and all(stored_manifest.get(key) == meta.get(key) for key in ("source_id", "release", "checksum"))
+        hashes_match = bool(stored_hashes) and all(digest((snapshot / name).read_bytes()) == checksum for name, checksum in stored_hashes.items())
+        if actual_names != set(expected) or (snapshot / source_name).read_bytes() != raw or not identity_matches or not hashes_match:
             raise RuntimeError(f"Incomplete or tampered immutable snapshot: {snapshot}")
         return snapshot, False
     if dry_run:

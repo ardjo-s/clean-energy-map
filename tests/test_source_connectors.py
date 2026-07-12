@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import run_source_connectors as connectors
+import ingest_eia860 as ingest
 
 
 def meta(source_id: str, period: str = "2024") -> dict:
@@ -228,6 +229,59 @@ class ConnectorTests(unittest.TestCase):
                 connectors.persist_snapshot(store, self.eia_raw, ".json", source, self.eia, True)
         recorded = connectors.source_meta("test", "1", "https://example.test", "2020-01-01", "2020", "fixture", "license", [], [], "yearly", [], [], "2020-02-01T00:00:00+00:00")
         self.assertEqual(recorded["freshness_state"], "current")
+
+    def test_snapshot_reuse_keeps_original_retrieval_metadata(self) -> None:
+        source = dict(self.eia_meta, checksum=connectors.digest(self.eia_raw), retrieved_at="2026-07-01T00:00:00+00:00")
+        later = dict(source, retrieved_at="2026-08-01T00:00:00+00:00")
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, _ = connectors.persist_snapshot(Path(directory), self.eia_raw, ".json", source, self.eia, False)
+            manifest_before = (snapshot / "manifest.json").read_bytes()
+            later_normalized = json.loads(connectors.canonical_json(self.eia))
+            for observation in later_normalized["observations"]:
+                observation["retrieved_at"] = later["retrieved_at"]
+            reused, created = connectors.persist_snapshot(Path(directory), self.eia_raw, ".json", later, later_normalized, False)
+            self.assertEqual(reused, snapshot)
+            self.assertFalse(created)
+            self.assertEqual((snapshot / "manifest.json").read_bytes(), manifest_before)
+
+    def test_non_finite_source_values_are_rejected_per_row(self) -> None:
+        gem = connectors.canonical_json({"rows": [
+            {"country": "USA", "gem_unit_id": "bad", "technology": "Nuclear", "capacity_mw": "NaN"},
+            {"country": "USA", "gem_unit_id": "good", "technology": "Nuclear", "capacity_mw": "10"},
+        ]})
+        result = connectors.normalize_gem(gem, ".json", meta("gem-gipt"), self.eia["records"])
+        self.assertEqual([item["record_key"] for item in result["records"]], ["good"])
+        self.assertEqual(result["rejected_rows"][0]["reason"], "invalid_numeric_value")
+
+        ember = connectors.canonical_json({"rows": [
+            {"entity_code": "USA", "date": "2024", "series": "Wind", "generation_twh": "Infinity", "unit": "TWh"},
+            {"entity_code": "USA", "date": "2024", "series": "Solar", "generation_twh": "2", "unit": "TWh"},
+        ]})
+        result = connectors.normalize_ember(ember, ".json", meta("ember"))
+        self.assertEqual([item["record_key"] for item in result["records"]], ["USA:2024:Solar:generation_twh"])
+        self.assertEqual(result["rejected_rows"][0]["reason"], "invalid_numeric_value")
+
+    def test_release_activation_rolls_back_after_midway_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destinations = tuple(root / f"live-{index}.json" for index in range(3))
+            staged = {}
+            for index, destination in enumerate(destinations):
+                destination.write_text(f"old-{index}")
+                candidate = root / f"candidate-{index}.json"
+                candidate.write_text(f"new-{index}")
+                staged[destination] = candidate
+            original_replace = Path.replace
+            calls = 0
+            def fail_second(path: Path, target: Path):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected activation failure")
+                return original_replace(path, target)
+            with mock.patch.object(Path, "replace", fail_second), self.assertRaisesRegex(OSError, "injected"):
+                ingest.activate_staged(staged, destinations)
+            self.assertEqual([item.read_text() for item in destinations], ["old-0", "old-1", "old-2"])
 
 
 if __name__ == "__main__":
