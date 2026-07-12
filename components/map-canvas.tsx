@@ -9,7 +9,12 @@ export function MapCanvas({ facilities, selectedId, onSelect }: { facilities: Fa
   const node = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
+  const facilitiesRef = useRef(facilities);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
   useEffect(() => {
     if (!node.current || mapRef.current) return;
     const map = new maplibregl.Map({
@@ -21,10 +26,10 @@ export function MapCanvas({ facilities, selectedId, onSelect }: { facilities: Fa
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-left");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     map.on("load", () => {
-      map.addSource("facilities", { type: "geojson", data: mappedFacilitiesGeoJson(facilities), cluster: true, clusterMaxZoom: 10, clusterRadius: 42 });
+      map.addSource("facilities", { type: "geojson", data: mappedFacilitiesGeoJson(facilitiesRef.current), cluster: true, clusterMaxZoom: 10, clusterRadius: 42 });
       map.addLayer({ id: "clusters", type: "circle", source: "facilities", filter: ["has", "point_count"], paint: { "circle-color": "#d9eeec", "circle-stroke-color": "#fff", "circle-stroke-width": 2, "circle-radius": ["step", ["get", "point_count"], 19, 25, 24, 100, 30] } });
       map.addLayer({ id: "cluster-count", type: "symbol", source: "facilities", filter: ["has", "point_count"], layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13 }, paint: { "text-color": "#0a1e40" } });
-      map.addLayer({ id: "facility-points", type: "circle", source: "facilities", filter: ["!", ["has", "point_count"]], paint: { "circle-color": ["match", ["get", "classification"], "eligible", "#087f83", "conditional", "#d88a00", "excluded", "#b83d27", "unknown", "#7b838d", "#7b838d"], "circle-radius": ["case", ["==", ["get", "id"], selectedId ?? ""], 9, 6], "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      map.addLayer({ id: "facility-points", type: "circle", source: "facilities", filter: ["!", ["has", "point_count"]], paint: { "circle-color": ["match", ["get", "classification"], "eligible", "#087f83", "conditional", "#d88a00", "excluded", "#b83d27", "unknown", "#7b838d", "#7b838d"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
       map.on("click", "clusters", async (event) => {
         const feature = map.queryRenderedFeatures(event.point, { layers: ["clusters"] })[0];
         const id = Number(feature?.properties?.cluster_id);
@@ -46,8 +51,14 @@ export function MapCanvas({ facilities, selectedId, onSelect }: { facilities: Fa
     return () => { map.remove(); mapRef.current = null; };
   }, []);
   useEffect(() => {
+    facilitiesRef.current = facilities;
     const source = mapRef.current?.getSource("facilities") as GeoJSONSource | undefined;
     source?.setData(mappedFacilitiesGeoJson(facilities));
   }, [facilities]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.getLayer("facility-points")) return;
+    map.setPaintProperty("facility-points", "circle-radius", ["case", ["==", ["get", "id"], selectedId ?? ""], 9, 6]);
+  }, [selectedId]);
   return <div className="map" ref={node} aria-label="Clean-energy facility map" />;
 }
