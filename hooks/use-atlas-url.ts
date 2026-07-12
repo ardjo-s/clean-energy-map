@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AtlasFilters } from "@/lib/atlas/query";
 import { emptyFilters } from "@/lib/atlas/query";
 import type { Classification, Facility, Technology } from "@/lib/domain/schemas";
@@ -23,27 +23,35 @@ function readState(): AtlasUrlState {
   };
 }
 
+function writeState(value: AtlasUrlState, mode: "push" | "replace") {
+  const p = new URLSearchParams();
+  if (value.facility) p.set("facility", value.facility);
+  if (value.geography !== "WORLD") p.set("geography", value.geography);
+  if (value.filters.query) p.set("q", value.filters.query);
+  for (const x of value.filters.technologies) p.append("technology", x);
+  for (const x of value.filters.classifications) p.append("classification", x);
+  for (const x of value.filters.lifecycleStates) p.append("lifecycle", x);
+  for (const x of value.filters.precisions) p.append("precision", x);
+  window.history[mode === "push" ? "pushState" : "replaceState"]({}, "", `${window.location.pathname}${p.size ? `?${p}` : ""}`);
+}
+
 export function useAtlasUrl() {
   const [state, setStateValue] = useState<AtlasUrlState>(readState);
+  const stateRef = useRef(state);
   useEffect(() => {
-    const restore = () => setStateValue(readState());
+    const restore = () => {
+      const restored = readState();
+      stateRef.current = restored;
+      setStateValue(restored);
+    };
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, []);
   const setState = useCallback((next: AtlasUrlState | ((old: AtlasUrlState) => AtlasUrlState), mode: "push" | "replace" = "push") => {
-    setStateValue((old) => {
-      const value = typeof next === "function" ? next(old) : next;
-      const p = new URLSearchParams();
-      if (value.facility) p.set("facility", value.facility);
-      if (value.geography !== "WORLD") p.set("geography", value.geography);
-      if (value.filters.query) p.set("q", value.filters.query);
-      for (const x of value.filters.technologies) p.append("technology", x);
-      for (const x of value.filters.classifications) p.append("classification", x);
-      for (const x of value.filters.lifecycleStates) p.append("lifecycle", x);
-      for (const x of value.filters.precisions) p.append("precision", x);
-      window.history[mode === "push" ? "pushState" : "replaceState"]({}, "", `${window.location.pathname}${p.size ? `?${p}` : ""}`);
-      return value;
-    });
+    const value = typeof next === "function" ? next(stateRef.current) : next;
+    stateRef.current = value;
+    setStateValue(value);
+    writeState(value, mode);
   }, []);
   return [state, setState] as const;
 }

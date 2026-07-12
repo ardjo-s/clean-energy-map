@@ -10,9 +10,9 @@ const lifecycle: Facility["lifecycleState"][] = ["operating", "under_constructio
 function toggle<T>(values: T[], value: T) { return values.includes(value) ? values.filter((x) => x !== value) : [...values, value]; }
 function title(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (x) => x.toUpperCase()); }
 
-export function SearchBox({ filters, facilities, onChange, onSelect }: { filters: AtlasFilters; facilities: Facility[]; onChange(f: AtlasFilters): void; onSelect(id: string): void }) {
+export function SearchBox({ filters, facilities, mobileOpen = false, onChange, onSelect }: { filters: AtlasFilters; facilities: Facility[]; mobileOpen?: boolean; onChange(f: AtlasFilters): void; onSelect(id: string): void }) {
   const results = filters.query.trim() ? facilities.slice(0, 8) : [];
-  return <div className="search-wrap">
+  return <div className={`search-wrap${mobileOpen ? " mobile-open" : ""}`}>
     <Search size={20} aria-hidden="true"/><input aria-label="Search facilities, countries, operators" placeholder="Search facilities, countries, operators" value={filters.query} onChange={(e) => onChange({ ...filters, query: e.target.value })}/>
     {filters.query && <button className="icon-button clear" aria-label="Clear search" onClick={() => onChange({ ...filters, query: "" })}><X size={18}/></button>}
     {results.length > 0 && <ul className="search-results" aria-label="Search results">{results.map((facility) => <li key={facility.id}><button onClick={() => onSelect(facility.id)}><strong>{facility.officialName}</strong><span>{facility.technologyLabel} · {facility.location.geometryType === "unplotted" ? "Unplotted" : "Mapped"}</span></button></li>)}</ul>}

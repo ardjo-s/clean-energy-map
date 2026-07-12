@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { BookOpen, CircleHelp, Database, Menu, Search, ShieldCheck } from "lucide-react";
+import { BookOpen, CircleHelp, Database, Menu, Search, ShieldCheck, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { filterFacilities } from "@/lib/atlas/query";
 import { countLocationStates } from "@/lib/atlas/calculations";
@@ -18,6 +18,7 @@ export function AtlasApp() {
   const { data, error } = useAtlasData();
   const [url, setUrl] = useAtlasUrl();
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [drawer, setDrawer] = useState<DrawerPage | null>(null);
   const facilities = useMemo(() => {
     if (!data) return [];
@@ -31,12 +32,15 @@ export function AtlasApp() {
   }, [data, url]);
   const selected = data?.facilities.find((f) => f.id === url.facility) ?? null;
   const locations = countLocationStates(facilities);
-  const select = (id: string) => setUrl((old) => ({ ...old, facility: id }));
+  const select = (id: string) => {
+    setMobileSearchOpen(false);
+    setUrl((old) => ({ ...old, facility: id }));
+  };
   if (error) return <main className="fatal"><h1>Atlas unavailable</h1><p>{error}</p><p>The source-backed dataset could not be loaded. No substitute records are shown.</p></main>;
   if (!data) return <main className="loading"><span className="brand-mark">◎</span><h1>Atlas</h1><p>Loading verified evidence…</p></main>;
   const coverage = url.geography === "WORLD" ? data.coverage : data.coverage.filter((c) => c.geographyCode === url.geography);
   return <main className="app-shell">
-    <header className="app-header"><div className="brand"><span className="brand-mark">◎</span><strong>Atlas</strong><span>Verifiable Clean Energy Atlas</span></div><SearchBox filters={url.filters} facilities={facilities} onChange={(filters) => setUrl((old) => ({ ...old, filters }), "replace")} onSelect={select}/><nav><button onClick={() => setDrawer("coverage")}><ShieldCheck/>Coverage</button><button onClick={() => setDrawer("sources")}><Database/>Sources</button><button onClick={() => setDrawer("methodology")}><BookOpen/>Methodology</button><button aria-label="Help" onClick={() => setDrawer("limitations")}><CircleHelp/></button></nav><button className="mobile-search" aria-label="Search"><Search/></button><button className="mobile-menu" aria-label="Menu" onClick={() => setDrawer("coverage")}><Menu/></button></header>
+    <header className="app-header"><div className="brand"><span className="brand-mark">◎</span><strong>Atlas</strong><span>Verifiable Clean Energy Atlas</span></div><SearchBox filters={url.filters} facilities={facilities} mobileOpen={mobileSearchOpen} onChange={(filters) => setUrl((old) => ({ ...old, filters }), "replace")} onSelect={select}/><nav><button onClick={() => setDrawer("coverage")}><ShieldCheck/>Coverage</button><button onClick={() => setDrawer("sources")}><Database/>Sources</button><button onClick={() => setDrawer("methodology")}><BookOpen/>Methodology</button><button aria-label="Help" onClick={() => setDrawer("limitations")}><CircleHelp/></button></nav><button className="mobile-search" aria-label={mobileSearchOpen ? "Close search" : "Search"} aria-expanded={mobileSearchOpen} onClick={() => setMobileSearchOpen((open) => !open)}>{mobileSearchOpen ? <X/> : <Search/>}</button><button className="mobile-menu" aria-label="Menu" onClick={() => setDrawer("coverage")}><Menu/></button></header>
     <div className="workspace">
       <MapCanvas facilities={facilities} selectedId={selected?.id ?? null} onSelect={select}/>
       <ControlPanel open={filtersOpen} setOpen={setFiltersOpen} filters={url.filters} allFacilities={data.facilities} geography={url.geography} geographies={[...new Set(data.coverage.map((x) => x.geographyCode))].sort()} onGeography={(geography) => setUrl((old) => ({ ...old, geography, facility: null }))} onChange={(filters) => setUrl((old) => ({ ...old, filters }), "replace")}/>
