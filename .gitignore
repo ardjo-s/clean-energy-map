@@ -30,3 +30,7 @@ __pycache__/
 *.tsbuildinfo
 next-env.d.ts
 .vercel
+
+# content-addressed connector snapshots and reports
+/data/connectors/staging/
+/data/connectors/reports/

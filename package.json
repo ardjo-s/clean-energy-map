@@ -15,8 +15,10 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "ingest:data": "python3 scripts/ingest_eia860.py",
+    "connectors:offline": "python3 scripts/run_source_connectors.py --offline --dry-run",
+    "test:connectors": "python3 -m unittest tests/test_source_connectors.py",
     "verify:data": "tsx scripts/verify-data.ts",
-    "verify": "npm run typecheck && npm run lint && npm run test && npm run verify:data && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run test:connectors && npm run verify:data && npm run build"
   },
   "dependencies": {
     "class-variance-authority": "0.7.1",

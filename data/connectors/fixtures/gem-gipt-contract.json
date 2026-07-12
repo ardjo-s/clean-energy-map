@@ -1,0 +1,7 @@
+{
+  "fixture": {
+    "source": "https://globalenergymonitor.org/projects/global-integrated-power-tracker/",
+    "scope": "Schema-only offline fixture. Supply an unmodified official GEM export with --gem-file for observations."
+  },
+  "rows": []
+}

@@ -1,0 +1,13 @@
+{
+  "fixture": {
+    "source": "https://www.eia.gov/electricity/data/eia860m/xls/may_generator2026.xlsx",
+    "source_sha256": "46ff71d90723e4dfe766f6fe191160d92ff28cb17d5d5f5a55eeed562067995d",
+    "scope": "Sourced minimal rows for deterministic offline connector tests; not a complete EIA-860M release."
+  },
+  "rows": [
+    {"Plant ID": 1, "Generator ID": "WT1", "Plant Name": "Sand Point", "Technology": "Onshore Wind Turbine", "Nameplate Capacity (MW)": 0.5, "Status": "(OS) Out of service and NOT expected to return to service in next calendar year", "Latitude": 55.339722, "Longitude": -160.4972, "inventory_status": "operating"},
+    {"Plant ID": 66359, "Generator ID": "GHW", "Plant Name": "Grover Hill Wind, LLC", "Technology": "Onshore Wind Turbine", "Nameplate Capacity (MW)": 140.3, "Status": "(TS) Construction complete, but not yet in commercial operation", "Latitude": 41.04422, "Longitude": -84.50981, "inventory_status": "planned"},
+    {"Plant ID": 6304, "Generator ID": "13WT", "Plant Name": "Kotzebue Hybrid", "Technology": "Onshore Wind Turbine", "Nameplate Capacity (MW)": 0.1, "Status": null, "Latitude": 66.837778, "Longitude": -162.5569, "inventory_status": "retired"},
+    {"Plant ID": 299, "Generator ID": "3", "Plant Name": "Blundell", "Technology": "Geothermal", "Nameplate Capacity (MW)": 30, "Status": null, "Latitude": 38.4889, "Longitude": -112.8533, "inventory_status": "cancelled_or_postponed"}
+  ]
+}
