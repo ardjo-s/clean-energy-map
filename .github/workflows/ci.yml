@@ -1,0 +1,55 @@
+name: Atlas CI
+
+on:
+  push:
+    branches: [main, "agent/**"]
+  pull_request:
+
+concurrency:
+  group: atlas-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Reproduce published data
+        run: npm run ingest:data
+      - name: Prove generated release is unchanged
+        run: git diff --exit-code -- public/data
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run verify:data
+      - run: npm run build
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Upload browser report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

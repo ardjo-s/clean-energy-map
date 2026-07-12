@@ -1,0 +1,4 @@
+public/data/*.json linguist-generated=true
+public/data/downloads/* linguist-generated=true
+data/raw/** binary
+docs/design/*.png binary
