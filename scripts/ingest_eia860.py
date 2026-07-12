@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import argparse
 import json
 import re
 import shutil
@@ -728,7 +729,10 @@ def build() -> dict[str, Any]:
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--activate", action="store_true", help="Replace the checked-in public release after staging the complete candidate.")
+    args = parser.parse_args(argv)
     data = build()
     raw_rows_encoded = data.pop("_rawRows")
     raw_ownership_encoded = data.pop("_rawOwnershipRows")
@@ -810,13 +814,15 @@ def main() -> None:
             with open(descriptor, "w", encoding="utf-8", closefd=True) as stream:
                 stream.write(content)
             staged[destination] = Path(name)
-        for destination in (RAW_ROWS, RAW_OWNERSHIP_ROWS, FULL_OUTPUT, OUTPUT):
-            staged[destination].replace(destination)
+        if args.activate:
+            for destination in (RAW_ROWS, RAW_OWNERSHIP_ROWS, FULL_OUTPUT, OUTPUT):
+                staged[destination].replace(destination)
     finally:
         for path in staged.values():
             path.unlink(missing_ok=True)
-    print(f"Wrote {OUTPUT.relative_to(ROOT)} ({len(data['facilities']):,} facilities, {len(compact_encoded):,} bytes)")
-    print(f"Wrote {FULL_OUTPUT.relative_to(ROOT)} ({len(full_encoded):,} bytes, complete evidence release)")
+    action = "Wrote" if args.activate else "Validated candidate for"
+    print(f"{action} {OUTPUT.relative_to(ROOT)} ({len(data['facilities']):,} facilities, {len(compact_encoded):,} bytes)")
+    print(f"{action} {FULL_OUTPUT.relative_to(ROOT)} ({len(full_encoded):,} bytes, complete evidence release)")
 
 
 if __name__ == "__main__":
