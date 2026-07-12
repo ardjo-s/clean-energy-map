@@ -7,6 +7,8 @@ import json
 import sys
 import tempfile
 import unittest
+import zipfile
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,6 +69,10 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(len(list((store / "snapshots/eia-860m").iterdir())), 2)
             self.assertTrue((first / "source.json").exists())
 
+            (first / "manifest.json").unlink()
+            with self.assertRaisesRegex(RuntimeError, "Incomplete or tampered"):
+                connectors.persist_snapshot(store, self.eia_raw, ".json", source, self.eia, False)
+
     def test_upstream_disappearance_does_not_delete_history(self) -> None:
         payload = json.loads(self.eia_raw)
         payload["rows"] = payload["rows"][:1]
@@ -84,6 +90,15 @@ class ConnectorTests(unittest.TestCase):
             if "plot" in record:
                 self.assertEqual(len(record["plot"]["location_observation_ids"]), 2)
                 self.assertTrue(all(record["plot"]["location_observation_ids"]))
+
+    def test_blank_coordinates_are_unplotted_and_duplicate_eia_keys_are_rejected(self) -> None:
+        row = json.loads(self.eia_raw)["rows"][0]
+        row["Latitude"] = ""
+        raw = connectors.canonical_json({"rows": [row, row]})
+        result = connectors.normalize_eia(raw, ".json", self.eia_meta)
+        self.assertNotIn("plot", result["records"][0])
+        self.assertEqual(result["counts"]["rejected"], 1)
+        self.assertEqual(result["rejected_rows"][0]["reason"], "duplicate_stable_identifier")
 
     def gem(self, row: dict) -> dict:
         raw = connectors.canonical_json({"rows": [row]})
@@ -119,6 +134,25 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(record["conflict_fields"], ["capacity_mw"])
         self.assertGreater(len(result["observations"]), 0)
 
+    def test_gem_parses_formatted_numbers_and_rejects_duplicate_ids(self) -> None:
+        raw = connectors.canonical_json({"rows": [
+            {"country": "USA", "gem_unit_id": "GEM-1", "technology": "Nuclear", "capacity_mw": "1,200", "location_precision": "exact", "latitude": "40.5", "longitude": "-75.2"},
+            {"country": "USA", "gem_unit_id": "GEM-1", "technology": "Nuclear", "capacity_mw": 1200},
+        ]})
+        result = connectors.normalize_gem(raw, ".json", meta("gem-gipt"), self.eia["records"])
+        self.assertEqual(result["records"][0]["values"]["capacity_mw"], 1200)
+        self.assertEqual(result["records"][0]["plot"]["coordinates"], [-75.2, 40.5])
+        self.assertEqual(result["counts"]["rejected"], 1)
+
+    def test_inline_xlsx_strings_are_retained(self) -> None:
+        worksheet = b'''<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>GEM unit ID</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>GEM-42</t></is></c></row></sheetData></worksheet>'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.xlsx"
+            with zipfile.ZipFile(path, "w") as workbook:
+                workbook.writestr("xl/worksheets/sheet1.xml", worksheet)
+            from xlsx_reader import iter_xlsx_records
+            self.assertEqual(list(iter_xlsx_records(path, header_row=1)), [{"GEM unit ID": "GEM-42"}])
+
     def test_restricted_gem_row_is_rejected(self) -> None:
         result = self.gem({"country": "USA", "gem_unit_id": "GEM-BLOCKED", "technology": "Onshore Wind Turbine", "license_restriction": "No redistribution"})
         self.assertEqual(result["counts"]["rejected"], 1)
@@ -137,6 +171,12 @@ class ConnectorTests(unittest.TestCase):
         values = {item["id"]: item["raw_value"] for item in result["observations"]}
         self.assertEqual(values[calculation["input_observation_ids"][0]], calculation["result"])
 
+    def test_ember_rejects_missing_indicator(self) -> None:
+        raw = connectors.canonical_json({"rows": [{"entity_code": "USA", "date": "2024", "generation_twh": 1, "unit": "TWh"}]})
+        result = connectors.normalize_ember(raw, ".json", meta("ember", "2024"))
+        self.assertEqual(result["records"], [])
+        self.assertEqual(result["rejected_rows"], [{"row": 1, "reason": "missing_indicator"}])
+
     def test_ember_reconciliation_keeps_both_source_values_and_observation_ids(self) -> None:
         raw = (connectors.FIXTURES / "ember-us-2024.json").read_bytes()
         result = connectors.normalize_ember(raw, ".json", meta("ember", "2024"))
@@ -154,6 +194,40 @@ class ConnectorTests(unittest.TestCase):
         after = hashlib.sha256(connectors.PUBLIC_RELEASE.read_bytes()).hexdigest()
         self.assertEqual(rc, 0)
         self.assertEqual(before, after)
+
+    def test_offline_json_output_is_deterministic_and_failures_are_structured(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            outputs = []
+            for _ in range(2):
+                stream = io.StringIO()
+                with contextlib.redirect_stdout(stream):
+                    self.assertEqual(connectors.main(["--offline", "--dry-run", "--json-only", "--store", directory]), 0)
+                outputs.append(stream.getvalue())
+            self.assertEqual(outputs[0], outputs[1])
+            json.loads(outputs[0])
+
+            stream = io.StringIO()
+            with contextlib.redirect_stdout(stream):
+                rc = connectors.main(["--offline", "--json-only", "--report-json", str(connectors.PUBLIC_RELEASE)])
+            self.assertEqual(rc, 1)
+            self.assertEqual(json.loads(stream.getvalue())["status"], "failed")
+
+    def test_cli_json_only_failure_uses_process_arguments(self) -> None:
+        stream = io.StringIO()
+        with mock.patch.object(sys, "argv", ["run_source_connectors.py", "--offline", "--json-only", "--report-json", str(connectors.PUBLIC_RELEASE)]), contextlib.redirect_stdout(stream):
+            self.assertEqual(connectors.main(), 1)
+        self.assertEqual(json.loads(stream.getvalue())["status"], "failed")
+
+    def test_dry_run_validates_existing_snapshot_and_freshness_uses_retrieval_date(self) -> None:
+        source = dict(self.eia_meta, checksum=connectors.digest(self.eia_raw))
+        with tempfile.TemporaryDirectory() as directory:
+            store = Path(directory)
+            snapshot, _ = connectors.persist_snapshot(store, self.eia_raw, ".json", source, self.eia, False)
+            (snapshot / "normalized.json").write_text("tampered")
+            with self.assertRaisesRegex(RuntimeError, "Incomplete or tampered"):
+                connectors.persist_snapshot(store, self.eia_raw, ".json", source, self.eia, True)
+        recorded = connectors.source_meta("test", "1", "https://example.test", "2020-01-01", "2020", "fixture", "license", [], [], "yearly", [], [], "2020-02-01T00:00:00+00:00")
+        self.assertEqual(recorded["freshness_state"], "current")
 
 
 if __name__ == "__main__":

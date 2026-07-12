@@ -52,7 +52,9 @@ def iter_xlsx_rows(path: Path, sheet: str = "xl/worksheets/sheet1.xml") -> Itera
                     value_node = cell.find(f"{MAIN_NS}v")
                     raw = value_node.text if value_node is not None else None
                     cell_type = cell.attrib.get("t")
-                    if raw is None:
+                    if cell_type == "inlineStr":
+                        value = "".join(node.text or "" for node in cell.iter(f"{MAIN_NS}t"))
+                    elif raw is None:
                         value: Any = None
                     elif cell_type == "s":
                         value = strings[int(raw)]

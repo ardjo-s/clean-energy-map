@@ -53,7 +53,26 @@ export function ControlPanel({ open, setOpen, filters, allFacilities, geography,
   </div>;
 }
 
-export function Legend({ total, mapped, unplotted, capacities }: { total: number; mapped: number; unplotted: number; capacities: CapacityTotals }) {
+function downloadCapacityLineage(facilities: Facility[]) {
+  const observations = facilities.flatMap((facility) => facility.capacities
+    .filter((capacity) => capacity.status === "installed")
+    .map((capacity) => ({ facilityId: facility.id, kind: capacity.kind, value: capacity.value, sourceObservationIds: capacity.sourceObservationIds })));
+  const payload = {
+    formula: "sum installed capacity values by capacity kind",
+    period: "latest retained facility observations in this release",
+    exclusions: ["planned capacities", "retired capacities", "facilities excluded by the active filters"],
+    facilityIds: facilities.map((facility) => facility.id),
+    observations,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "filtered-capacity-lineage.json";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function Legend({ total, mapped, unplotted, capacities, facilities }: { total: number; mapped: number; unplotted: number; capacities: CapacityTotals; facilities: Facility[] }) {
   const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-  return <div className="legend" aria-label="Map legend"><div>{classifications.map((classification) => <span key={classification}><i className={`dot ${classification}`}/>{title(classification)}</span>)}</div><div><strong>{number.format(total)} records</strong><span>◉ Mapped {number.format(mapped)}</span><span>○ Unplotted {number.format(unplotted)}</span></div><div className="capacity-legend"><strong>Installed capacity</strong><span>{number.format(capacities.electricalMw)} electrical MW</span><span>{number.format(capacities.thermalMw)} thermal MW</span><span>{number.format(capacities.storagePowerMw)} storage MW</span><span>{number.format(capacities.storageEnergyMwh)} storage MWh</span></div></div>;
+  return <div className="legend" aria-label="Map legend"><div>{classifications.map((classification) => <span key={classification}><i className={`dot ${classification}`}/>{title(classification)}</span>)}</div><div><strong>{number.format(total)} records</strong><span>◉ Mapped {number.format(mapped)}</span><span>○ Unplotted {number.format(unplotted)}</span></div><div className="capacity-legend"><strong>Installed capacity</strong><span>{number.format(capacities.electricalMw)} electrical MW</span><span>{number.format(capacities.thermalMw)} thermal MW</span><span>{number.format(capacities.storagePowerMw)} storage MW</span><span>{number.format(capacities.storageEnergyMwh)} storage MWh</span><button className="text-button" onClick={() => downloadCapacityLineage(facilities)}>Download calculation lineage</button></div></div>;
 }

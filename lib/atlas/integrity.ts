@@ -78,6 +78,22 @@ function facilityIssues(
         entityId: facility.id,
       });
     }
+    if (facility.location.geometryType === "point") {
+      const [longitude, latitude] = facility.location.coordinates;
+      const latitudeValues = locationEvidence
+        .filter((observation) => observation?.field === "latitude")
+        .map((observation) => observation?.normalizedValue);
+      const longitudeValues = locationEvidence
+        .filter((observation) => observation?.field === "longitude")
+        .map((observation) => observation?.normalizedValue);
+      if (!latitudeValues.includes(latitude) || !longitudeValues.includes(longitude)) {
+        issues.push({
+          code: "coordinate_evidence_mismatch",
+          message: "Plotted coordinates must exactly match normalized latitude and longitude observations.",
+          entityId: facility.id,
+        });
+      }
+    }
   }
 
   if (facility.energyRole === "storage" && facility.capacities.some((capacity) => capacity.kind === "electrical_mw")) {
@@ -303,6 +319,43 @@ export function validateBrowserDatasetIntegrity(dataset: AtlasDataset): Integrit
     for (const ownershipId of facility.ownershipIds) {
       if (!ownership.has(ownershipId)) issues.push({ code: "browser_facility_missing_ownership", message: `Missing browser ownership ${ownershipId}.`, entityId: facility.id });
     }
+  }
+  return issues;
+}
+
+export function validateReleasePairIntegrity(compact: AtlasDataset, full: AtlasDataset): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const releaseFields = ["id", "version", "buildId", "methodologyReleaseId"] as const;
+  for (const field of releaseFields) {
+    if (compact.release[field] !== full.release[field]) {
+      issues.push({ code: "compact_release_mismatch", message: `Compact and full release ${field} differ.` });
+    }
+  }
+  if (JSON.stringify(compact.release.schemaVersions) !== JSON.stringify(full.release.schemaVersions)) {
+    issues.push({ code: "compact_schema_version_mismatch", message: "Compact and full schema versions differ." });
+  }
+
+  const fullFacilities = new Set(full.facilities.map((item) => item.id));
+  const fullProjects = new Set(full.projects.map((item) => item.id));
+  const fullPhases = new Set(full.phases.map((item) => item.id));
+  for (const facility of compact.facilities) {
+    if (!fullFacilities.has(facility.id)) {
+      issues.push({ code: "compact_unknown_facility", message: "Compact facility is absent from the full release.", entityId: facility.id });
+    }
+    if (!fullProjects.has(facility.projectId)) {
+      issues.push({ code: "compact_dangling_project", message: `Compact project ${facility.projectId} is absent from the full release.`, entityId: facility.id });
+    }
+    for (const phaseId of facility.phaseIds) {
+      if (!fullPhases.has(phaseId)) {
+        issues.push({ code: "compact_dangling_phase", message: `Compact phase ${phaseId} is absent from the full release.`, entityId: facility.id });
+      }
+    }
+  }
+  if (compact.facilities.length !== full.facilities.length) {
+    issues.push({ code: "compact_facility_count_mismatch", message: "Compact and full facility counts differ." });
+  }
+  if (compact.geographies.length !== full.geographies.length) {
+    issues.push({ code: "compact_geography_count_mismatch", message: "Compact and full geography counts differ." });
   }
   return issues;
 }

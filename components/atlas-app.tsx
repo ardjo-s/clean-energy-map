@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { BookOpen, CircleHelp, Database, Menu, Search, ShieldCheck, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { aggregateCapacities, countLocationStates } from "@/lib/atlas/calculations";
 import { filterFacilities } from "@/lib/atlas/query";
 import { useAtlasData } from "@/hooks/use-atlas-data";
@@ -20,6 +20,13 @@ export function AtlasApp() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [facilitiesVisible, setFacilitiesVisible] = useState(true);
+  useEffect(() => {
+    if (!data) return;
+    const geographyExists = url.geography === "WORLD" || data.geographies.some((item) => item.code === url.geography);
+    const facilityExists = !url.facility || data.facilities.some((item) => item.id === url.facility);
+    if (geographyExists && facilityExists) return;
+    setUrl((old) => ({ ...old, geography: geographyExists ? old.geography : "WORLD", facility: facilityExists ? old.facility : null }), "replace");
+  }, [data, setUrl, url.facility, url.geography]);
   const facilities = useMemo(() => {
     if (!data) return [];
     const query = url.filters.query.trim().toLocaleLowerCase();
@@ -32,7 +39,7 @@ export function AtlasApp() {
       const ownerNames = facility.ownershipIds.map((id) => organizations.get(ownership.get(id)?.organizationId ?? "")?.officialName ?? "");
       return [facility.officialName, ...facility.alternateNames, facility.technologyLabel, facility.jurisdiction.countryCode ?? "", facility.jurisdiction.admin1 ?? "", ...operatorNames, ...ownerNames].join(" ").toLocaleLowerCase().includes(query);
     });
-  }, [data, url]);
+  }, [data, url.filters, url.geography]);
   const selected = data?.facilities.find((facility) => facility.id === url.facility) ?? null;
   const locations = countLocationStates(facilities);
   const capacities = aggregateCapacities(facilities);
@@ -60,7 +67,7 @@ export function AtlasApp() {
     <div className="workspace">
       <MapCanvas facilities={facilities} selectedId={selected?.id ?? null} geography={url.geography} viewState={url.map} facilitiesVisible={facilitiesVisible} onSelect={selectFacility} onViewState={updateMapView}/>
       <ControlPanel open={filtersOpen} setOpen={setFiltersOpen} filters={url.filters} allFacilities={data.facilities} geography={url.geography} geographies={geographies} facilitiesVisible={facilitiesVisible} onFacilitiesVisible={setFacilitiesVisible} onGeography={selectGeography} onChange={(filters) => setUrl((old) => ({ ...old, filters }), "replace")}/>
-      <Legend {...locations} capacities={capacities}/>
+      <Legend {...locations} capacities={capacities} facilities={facilities}/>
       {!selected && !url.drawer && url.geography !== "WORLD" && <CountryProfile code={url.geography} data={data} onClose={() => selectGeography("WORLD")}/>}
       {selected && !url.drawer && <FacilityInspector facility={selected} data={data} onClose={() => setUrl((old) => ({ ...old, facility: null }))}/>}
       <EvidenceDrawer page={url.drawer} geography={url.geography} data={data} onClose={() => setUrl((old) => ({ ...old, drawer: null }))}/>

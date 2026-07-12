@@ -15,8 +15,13 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
   const onViewStateRef = useRef(onViewState);
   const facilitiesRef = useRef(facilities);
   const facilitiesVisibleRef = useRef(facilitiesVisible);
+  const selectedIdRef = useRef(selectedId);
   const initialViewRef = useRef(viewState ?? WORLD_VIEW);
   const previousGeographyRef = useRef(viewState ? geography : "");
+  const applySelection = (map: Map) => {
+    if (!map.getLayer("facility-points")) return;
+    map.setPaintProperty("facility-points", "circle-radius", ["case", ["==", ["get", "id"], selectedIdRef.current ?? ""], 9, 6]);
+  };
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -42,6 +47,7 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
       map.addLayer({ id: "clusters", type: "circle", source: "facilities", filter: ["has", "point_count"], paint: { "circle-color": "#d9eeec", "circle-stroke-color": "#fff", "circle-stroke-width": 2, "circle-radius": ["step", ["get", "point_count"], 19, 25, 24, 100, 30] } });
       map.addLayer({ id: "cluster-count", type: "symbol", source: "facilities", filter: ["has", "point_count"], layout: { "text-field": ["get", "point_count_abbreviated"], "text-size": 13 }, paint: { "text-color": "#0a1e40" } });
       map.addLayer({ id: "facility-points", type: "circle", source: "facilities", filter: ["!", ["has", "point_count"]], paint: { "circle-color": ["match", ["get", "classification"], "eligible", "#087f83", "conditional", "#d88a00", "excluded", "#b83d27", "unknown", "#7b838d", "#7b838d"], "circle-radius": 6, "circle-stroke-color": "#fff", "circle-stroke-width": 2 } });
+      applySelection(map);
       if (!facilitiesVisibleRef.current) for (const layer of ["clusters", "cluster-count", "facility-points"]) map.setLayoutProperty(layer, "visibility", "none");
       map.on("click", "clusters", async (event) => {
         const feature = map.queryRenderedFeatures(event.point, { layers: ["clusters"] })[0];
@@ -102,9 +108,9 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
     if (map.loaded()) fit(); else map.once("load", fit);
   }, [facilities, geography]);
   useEffect(() => {
+    selectedIdRef.current = selectedId;
     const map = mapRef.current;
-    if (!map?.getLayer("facility-points")) return;
-    map.setPaintProperty("facility-points", "circle-radius", ["case", ["==", ["get", "id"], selectedId ?? ""], 9, 6]);
+    if (map) applySelection(map);
   }, [selectedId]);
   return <div className="map" ref={node} role="region" aria-label="Clean-energy facility map" data-record-count={facilities.length} data-facilities-visible={facilitiesVisible} />;
 }
