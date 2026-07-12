@@ -1,0 +1,13 @@
+{
+  "fixture": {
+    "source": "https://files.ember-energy.org/public-downloads/yearly_full_release_long_format.csv",
+    "publication_date": "2026-06-23",
+    "scope": "Sourced US 2024 generation rows from Ember's official CC BY 4.0 download for offline reconciliation tests."
+  },
+  "rows": [
+    {"entity_code": "USA", "date": "2024", "series": "Total Generation", "generation_twh": 4391.02, "unit": "TWh"},
+    {"entity_code": "USA", "date": "2024", "series": "Nuclear", "generation_twh": 781.86, "unit": "TWh"},
+    {"entity_code": "USA", "date": "2024", "series": "Wind", "generation_twh": 451.9, "unit": "TWh"},
+    {"entity_code": "USA", "date": "2024", "series": "Solar", "generation_twh": 303.75, "unit": "TWh"}
+  ]
+}
