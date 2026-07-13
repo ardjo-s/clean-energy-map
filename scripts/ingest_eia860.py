@@ -22,6 +22,12 @@ from xlsx_reader import iter_xlsx_records, iter_xlsx_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 EIA_ZIP = ROOT / "data/raw/eia/eia8602024.zip"
+EIA923_ZIP = ROOT / "data/raw/eia/f923_2024.zip"
+EIA860M_XLSX = ROOT / "data/raw/eia/may_generator2026.xlsx"
+EIA861M_SOLAR_XLSX = ROOT / "data/raw/eia/small_scale_solar_2024.xlsx"
+EIA861M_NON_NET_XLSX = ROOT / "data/raw/eia/non_netmetering_2024.xlsx"
+USPVDB_JSON = ROOT / "data/raw/usgs/uspvdb-v4.0-eia-projects.json"
+USWTDB_JSON = ROOT / "data/raw/usgs/uswtdb-v9.0-eia-turbines.json"
 NLR_XLSX = ROOT / "data/raw/nlr/EF_Table_FINAL.xlsx"
 OUTPUT = ROOT / "public/data/atlas-v1.json"
 FULL_OUTPUT = ROOT / "public/data/downloads/atlas-v1-full.json"
@@ -29,9 +35,15 @@ RAW_ROWS = ROOT / "public/data/downloads/eia860-relevant-generators.jsonl"
 RAW_OWNERSHIP_ROWS = ROOT / "public/data/downloads/eia860-relevant-ownership.jsonl"
 RETRIEVED_AT = "2026-07-13T00:00:00Z"
 METHOD_VERSION = "1.1.0"
-DATASET_VERSION = "2024.3"
+DATASET_VERSION = "2024.4"
 CORRECTIONS_URL = "https://github.com/ardjo-s/clean-energy-map/issues/new?labels=data-correction"
 EXPECTED_EIA_SHA256 = "0aaae04812cd4ab87a3e346bdf93848a3cc15053fd4dc2a4cf82d2aeac95f12b"
+EXPECTED_EIA923_SHA256 = "272055f2d748f6486fc3076abd5a40ec736dbff45458bdb4c895761278c50f2b"
+EXPECTED_EIA860M_SHA256 = "46ff71d90723e4dfe766f6fe191160d92ff28cb17d5d5f5a55eeed562067995d"
+EXPECTED_EIA861M_SOLAR_SHA256 = "1cf0102e5c0ffb2a269c45f40678615aa4267b079f21e1ba3c052b12f4197a08"
+EXPECTED_EIA861M_NON_NET_SHA256 = "def3124977d4a557e0ba3a0b4339023f3c672942efac23d259b35ea97d4de2f0"
+EXPECTED_USPVDB_SHA256 = "3cafd83afc83e03654b7082215d6cff35cb5701af7c04190387cdbf4f1c74b93"
+EXPECTED_USWTDB_SHA256 = "7e78d0690ec3e536c8aa5c5c938f2405ba6ba3cba1ee8a288b0693b1be06b75d"
 EXPECTED_NLR_SHA256 = "ef4885c8519ff7fbcb5147842dc0549d7b9955b28eeee23609ad9032a37bd5cb"
 
 ALL_TECHNOLOGIES = (
@@ -200,6 +212,117 @@ def number(value: str) -> float:
     return float(value.replace(",", ""))
 
 
+def eia923_generation_by_key(records: Any) -> dict[tuple[int, str, str], float]:
+    """Return final annual MWh at EIA's published plant/prime-mover/fuel grain."""
+    result: dict[tuple[int, str, str], float] = defaultdict(float)
+    for row in records:
+        plant_code = row.get("Plant Id")
+        prime_mover = row.get("Reported\nPrime Mover")
+        fuel = row.get("Reported\nFuel Type Code")
+        generation = row.get("Net Generation\n(Megawatthours)")
+        if not isinstance(plant_code, (int, float)) or not isinstance(generation, (int, float)):
+            continue
+        if not isinstance(prime_mover, str) or not isinstance(fuel, str):
+            continue
+        result[(int(plant_code), prime_mover, fuel)] += float(generation)
+    return dict(result)
+
+
+def reported_operating_date(row: dict[str, Any]) -> str | None:
+    year, month = row.get("Operating Year"), row.get("Operating Month")
+    if not isinstance(year, (int, float)) or not isinstance(month, (int, float)):
+        return None
+    if not 1 <= int(month) <= 12 or not 1900 <= int(year) <= 2200:
+        return None
+    return f"{int(year):04d}-{int(month):02d}-01"
+
+
+def planned_operation_date(row: dict[str, Any]) -> str | None:
+    year, month = row.get("Planned Operation Year"), row.get("Planned Operation Month")
+    if not isinstance(year, (int, float)) or not isinstance(month, (int, float)):
+        return None
+    if not 1 <= int(month) <= 12 or not 2024 <= int(year) <= 2200:
+        return None
+    return f"{int(year):04d}-{int(month):02d}-01"
+
+
+def planned_lifecycle(status: Any) -> str:
+    match = re.match(r"^\(([A-Z]+)\)", str(status or ""))
+    code = match.group(1) if match else ""
+    if code in {"U", "V", "TS"}:
+        return "under_construction"
+    if code == "T":
+        return "permitted"
+    if code in {"P", "L"}:
+        return "proposed"
+    return "unknown"
+
+
+def compact_date(value: Any, fallback: str) -> str:
+    raw = str(value or "")
+    if len(raw) == 8 and raw.isdigit():
+        candidate = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+        try:
+            datetime.strptime(candidate, "%Y-%m-%d")
+            return candidate
+        except ValueError:
+            pass
+    return fallback
+
+
+def eia861m_distributed_capacity() -> tuple[float, dict[str, float]]:
+    small_solar = None
+    for row in iter_xlsx_rows(EIA861M_SOLAR_XLSX):
+        if len(row) > 7 and row[:4] == [2024, 12, "US", "Final"] and isinstance(row[7], (int, float)):
+            small_solar = float(row[7])
+            break
+    if small_solar is None:
+        raise RuntimeError("Missing final December 2024 U.S. small-scale solar total")
+    columns = {"photovoltaic_mw": 16, "battery_mw": 22, "battery_energy_mwh": 28, "wind_mw": 34, "hydroelectric_mw": 40, "fuel_cells_mw": 46, "internal_combustion_mw": 52, "combustion_turbine_mw": 58, "steam_mw": 64, "other_mw": 70, "total_mw": 7}
+    totals = {field: 0.0 for field in columns}
+    for row in iter_xlsx_rows(EIA861M_NON_NET_XLSX):
+        if len(row) <= 70 or row[0] != 2024 or row[1] != 12 or row[5] != "Final":
+            continue
+        for field, index in columns.items():
+            if isinstance(row[index], (int, float)):
+                totals[field] += float(row[index])
+    return small_solar, {field: round(value, 6) for field, value in totals.items()}
+
+
+def uspvdb_projects_by_eia(records: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """Index project centroids only by the exact upstream EIA identifier."""
+    result: dict[int, dict[str, Any]] = {}
+    for row in records:
+        eia_id, latitude, longitude = row.get("eia_id"), row.get("ylat"), row.get("xlong")
+        if not all(isinstance(value, (int, float)) for value in (eia_id, latitude, longitude)):
+            continue
+        key = int(eia_id)
+        if key in result:
+            raise RuntimeError(f"Duplicate USPVDB EIA identifier: {key}")
+        result[key] = row
+    return result
+
+
+def uswtdb_centroids_by_eia(records: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """Derive deterministic project centroids from turbines sharing an exact EIA ID."""
+    groups: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for row in records:
+        eia_id, latitude, longitude = row.get("eia_id"), row.get("ylat"), row.get("xlong")
+        if all(isinstance(value, (int, float)) for value in (eia_id, latitude, longitude)):
+            groups[int(eia_id)].append(row)
+    result: dict[int, dict[str, Any]] = {}
+    for eia_id, rows in groups.items():
+        case_ids = sorted(str(row["case_id"]) for row in rows)
+        result[eia_id] = {
+            "latitude": round(sum(float(row["ylat"]) for row in rows) / len(rows), 6),
+            "longitude": round(sum(float(row["xlong"]) for row in rows) / len(rows), 6),
+            "turbineCount": len(rows),
+            "caseIdsSha256": hashlib.sha256("|".join(case_ids).encode()).hexdigest(),
+            "minimumLocationConfidence": min(int(row.get("t_conf_loc") or 0) for row in rows),
+        }
+    return result
+
+
 def first_annual_2024(path: Path) -> list[str]:
     parser = TableParser()
     parser.feed(path.read_text(encoding="utf-8", errors="replace"))
@@ -249,7 +372,7 @@ def source(id_: str, publisher: str, title: str, url: str, source_type: str, pub
     }
 
 
-def observation(source_id: str, entity_type: str, entity_id: str, field: str, raw: Any, normalized: Any, confidence: str = "high", note: str | None = None) -> dict[str, Any]:
+def observation(source_id: str, entity_type: str, entity_id: str, field: str, raw: Any, normalized: Any, confidence: str = "high", note: str | None = None, observed_at: str | None = "2024-12-31") -> dict[str, Any]:
     return {
         "id": stable_id("obs", source_id, entity_type, entity_id, field),
         "sourceId": source_id,
@@ -259,7 +382,7 @@ def observation(source_id: str, entity_type: str, entity_id: str, field: str, ra
         "rawValue": raw,
         "rawUnit": None,
         "normalizedValue": normalized,
-        "observedAt": "2024-12-31",
+        "observedAt": observed_at,
         "retrievedAt": RETRIEVED_AT,
         "confidence": confidence,
         "conflictGroup": None,
@@ -299,11 +422,17 @@ def make_lifecycle_evidence(ranges: dict[str, tuple[float, float, float]]) -> li
 
 
 def build() -> dict[str, Any]:
-    if sha256(EIA_ZIP) != EXPECTED_EIA_SHA256 or sha256(NLR_XLSX) != EXPECTED_NLR_SHA256:
+    if sha256(EIA_ZIP) != EXPECTED_EIA_SHA256 or sha256(EIA923_ZIP) != EXPECTED_EIA923_SHA256 or sha256(EIA860M_XLSX) != EXPECTED_EIA860M_SHA256 or sha256(EIA861M_SOLAR_XLSX) != EXPECTED_EIA861M_SOLAR_SHA256 or sha256(EIA861M_NON_NET_XLSX) != EXPECTED_EIA861M_NON_NET_SHA256 or sha256(USPVDB_JSON) != EXPECTED_USPVDB_SHA256 or sha256(USWTDB_JSON) != EXPECTED_USWTDB_SHA256 or sha256(NLR_XLSX) != EXPECTED_NLR_SHA256:
         raise RuntimeError("Pinned source checksum mismatch")
 
     sources = [
         source("src-eia-860-2024", "U.S. Energy Information Administration", "Form EIA-860 detailed data, final 2024", "https://www.eia.gov/electricity/data/eia860/", "government", "2025-09-09", "U.S. federal government public-domain data; acknowledgement requested.", "U.S. electric power plants with at least 1 MW combined nameplate capacity.", EIA_ZIP),
+        source("src-eia-923-2024", "U.S. Energy Information Administration", "Form EIA-923 detailed data, final 2024 revised release", "https://www.eia.gov/electricity/data/eia923/", "government", "2026-01-12", "U.S. federal government public-domain data; acknowledgement requested.", "Final 2024 U.S. plant and prime-mover electricity generation and fuel consumption.", EIA923_ZIP),
+        source("src-eia-860m-2026-05", "U.S. Energy Information Administration", "Form EIA-860M preliminary monthly generator inventory, May 2026", "https://www.eia.gov/electricity/data/eia860m/", "government", "2026-06-24", "U.S. federal government public-domain data; acknowledgement requested.", "Preliminary May 2026 inventory of planned U.S. generators; kept distinct from final annual EIA-860 observations.", EIA860M_XLSX),
+        source("src-eia-861m-small-solar-2024", "U.S. Energy Information Administration", "Form EIA-861M final small-scale solar capacity and generation, December 2024", "https://www.eia.gov/electricity/data/eia861m/", "government", "2025-10-27", "U.S. federal government public-domain data; acknowledgement requested.", "Final state and U.S. aggregate estimates for solar PV systems below 1 MW; never plotted as facilities.", EIA861M_SOLAR_XLSX),
+        source("src-eia-861m-non-net-2024", "U.S. Energy Information Administration", "Form EIA-861M final non-net-metered distributed generator inventory, December 2024", "https://www.eia.gov/electricity/data/eia861m/", "government", "2025-10-27", "U.S. federal government public-domain data; acknowledgement requested.", "Final utility and state-adjustment aggregates for non-net-metered generators below 1 MW; never plotted as facilities.", EIA861M_NON_NET_XLSX),
+        source("src-usgs-uspvdb-4.0", "U.S. Geological Survey / Lawrence Berkeley National Laboratory", "United States Large-Scale Solar Photovoltaic Database, version 4.0", "https://energy.usgs.gov/uspvdb/data/", "government", "2026-04-01", "U.S. government data; review the official USPVDB citation and third-party notices.", "U.S. large-scale solar project centroids linked only through exact published EIA plant IDs.", USPVDB_JSON),
+        source("src-usgs-uswtdb-9.0", "U.S. Geological Survey / Lawrence Berkeley National Laboratory / American Clean Power", "United States Wind Turbine Database, version 9.0", "https://energy.usgs.gov/uswtdb/data/", "government", "2026-06-26", "U.S. government data; review the official USWTDB citation and third-party notices.", "U.S. wind turbine locations grouped only through exact published EIA plant IDs.", USWTDB_JSON),
         source("src-eia-epm-1-1-2024", "U.S. Energy Information Administration", "Electric Power Monthly Table 1.1, final annual 2024", "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=table_1_01", "government", "2026-06-25", "U.S. federal government public-domain data; acknowledgement requested.", "U.S. annual net electricity generation, all sectors.", ROOT / "data/raw/eia/epm-table-1-1.html"),
         source("src-eia-epm-1-1a-2024", "U.S. Energy Information Administration", "Electric Power Monthly Table 1.1.A, final annual 2024", "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=table_1_01_a", "government", "2026-06-25", "U.S. federal government public-domain data; acknowledgement requested.", "U.S. annual renewable net generation by source, all sectors.", ROOT / "data/raw/eia/epm-table-1-1-a.html"),
         source("src-eia-epa-4-2a-2024", "U.S. Energy Information Administration", "Electric Power Annual Table 4.2.A, 2024", "https://www.eia.gov/electricity/annual/table.php?t=epa_04_02_a.html", "government", "2025-10-16", "U.S. federal government public-domain data; acknowledgement requested.", "U.S. existing net summer capacity by energy source and producer type.", ROOT / "data/raw/eia/epa-table-4-2-a.html"),
@@ -317,6 +446,10 @@ def build() -> dict[str, Any]:
             for member in ["2___Plant_Y2024.xlsx", "3_1_Generator_Y2024.xlsx", "3_4_Energy_Storage_Y2024.xlsx", "4___Owner_Y2024.xlsx"]:
                 archive.extract(member, temp_path)
 
+        eia923_member = "EIA923_Schedules_2_3_4_5_M_12_2024_Final.xlsx"
+        with zipfile.ZipFile(EIA923_ZIP) as archive:
+            archive.extract(eia923_member, temp_path)
+
         plants = {int(row["Plant Code"]): row for row in iter_xlsx_records(temp_path / "2___Plant_Y2024.xlsx") if isinstance(row.get("Plant Code"), (int, float))}
         storage = {
             (int(row["Plant Code"]), str(row["Generator ID"])): row
@@ -329,6 +462,15 @@ def build() -> dict[str, Any]:
             for row in iter_xlsx_records(temp_path / "4___Owner_Y2024.xlsx")
             if isinstance(row.get("Plant Code"), (int, float)) and row.get("Generator ID") is not None
         ]
+        generation_by_key = eia923_generation_by_key(iter_xlsx_records(temp_path / eia923_member, header_row=6))
+
+    planned_relevant = [
+        row
+        for row in iter_xlsx_records(EIA860M_XLSX, header_row=3, sheet="xl/worksheets/sheet2.xml")
+        if row.get("Technology") in TECH_RULES and isinstance(row.get("Plant ID"), (int, float))
+    ]
+    uspvdb_by_eia = uspvdb_projects_by_eia(json.loads(USPVDB_JSON.read_text()))
+    uswtdb_by_eia = uswtdb_centroids_by_eia(json.loads(USWTDB_JSON.read_text()))
 
     relevant_generator_keys = {(int(row["Plant Code"]), str(row["Generator ID"])) for row in relevant}
     relevant_ownership = [
@@ -408,6 +550,30 @@ def build() -> dict[str, Any]:
         else:
             location = {"geometryType": "unplotted", "coordinates": None, "precision": "locality_only" if plant.get("City") else "unknown", "confidence": "low", "evidenceObservationIds": [state_obs["id"]], "method": "withheld_no_reliable_geometry"}
 
+        spatial_source_id = None
+        spatial_external_identifiers: dict[str, str] = {}
+        if normalized_tech == "solar_photovoltaic" and plant_code in uspvdb_by_eia:
+            spatial = uspvdb_by_eia[plant_code]
+            spatial_source_id = "src-usgs-uspvdb-4.0"
+            observed_at = compact_date(spatial.get("p_img_date"), "2026-04-01")
+            spatial_external_identifiers = {"uspvdbCaseId": str(spatial["case_id"])}
+            spatial_note = "USPVDB project-area centroid matched by exact published EIA plant ID; not a surveyed equipment point."
+            lat_obs = observation(spatial_source_id, "facility", facility_id, "latitude", spatial["ylat"], spatial["ylat"], "high" if int(spatial.get("p_dig_conf") or 0) >= 3 else "medium", spatial_note, observed_at)
+            lon_obs = observation(spatial_source_id, "facility", facility_id, "longitude", spatial["xlong"], spatial["xlong"], "high" if int(spatial.get("p_dig_conf") or 0) >= 3 else "medium", spatial_note, observed_at)
+            match_obs = observation(spatial_source_id, "facility", facility_id, "exact_eia_id_match", plant_code, plant_code, "high", "Automatic match allowed only because the upstream EIA identifier is exact.", observed_at)
+            group_observations.extend([lat_obs, lon_obs, match_obs])
+            location = {"geometryType": "point", "coordinates": [float(spatial["xlong"]), float(spatial["ylat"])], "precision": "project_area", "confidence": lat_obs["confidence"], "evidenceObservationIds": [lat_obs["id"], lon_obs["id"], match_obs["id"]], "method": "verified_geometry_centroid"}
+        elif normalized_tech in {"onshore_wind", "offshore_wind"} and plant_code in uswtdb_by_eia:
+            spatial = uswtdb_by_eia[plant_code]
+            spatial_source_id = "src-usgs-uswtdb-9.0"
+            spatial_external_identifiers = {"uswtdbCaseIdsSha256": spatial["caseIdsSha256"], "uswtdbTurbineCount": str(spatial["turbineCount"])}
+            spatial_note = "Derived centroid of USWTDB turbine coordinates grouped by exact published EIA plant ID; not a project boundary."
+            lat_obs = observation(spatial_source_id, "facility", facility_id, "latitude", spatial["latitude"], spatial["latitude"], "medium", spatial_note, "2026-06-26")
+            lon_obs = observation(spatial_source_id, "facility", facility_id, "longitude", spatial["longitude"], spatial["longitude"], "medium", spatial_note, "2026-06-26")
+            match_obs = observation(spatial_source_id, "facility", facility_id, "exact_eia_id_match", json.dumps({"eiaPlantCode": plant_code, "turbineCount": spatial["turbineCount"], "minimumLocationConfidence": spatial["minimumLocationConfidence"]}, sort_keys=True), plant_code, "high", "Automatic match allowed only because the upstream EIA identifier is exact.", "2026-06-26")
+            group_observations.extend([lat_obs, lon_obs, match_obs])
+            location = {"geometryType": "point", "coordinates": [spatial["longitude"], spatial["latitude"]], "precision": "project_area", "confidence": "medium", "evidenceObservationIds": [lat_obs["id"], lon_obs["id"], match_obs["id"]], "method": "verified_geometry_centroid"}
+
         observations.extend(group_observations)
         capacity_observation_ids[normalized_tech].append(capacity_obs["id"])
         if operator_id not in organizations:
@@ -424,12 +590,20 @@ def build() -> dict[str, Any]:
                 "sourceObservationIds": [operator_obs["id"]],
             }
         phase_ids: list[str] = []
+        phase_dates: list[str] = []
         facility_ownership_ids: list[str] = []
         for row in sorted(rows, key=lambda item: str(item["Generator ID"])):
             phase_id = stable_id("phase", plant_code, row["Generator ID"])
             phase_ids.append(phase_id)
             lifecycle = STATUS_MAP.get(str(row["Status"]), "unknown")
-            phases.append({"id": phase_id, "projectId": project_id, "name": f"Generator {row['Generator ID']}", "facilityIds": [facility_id], "lifecycleState": lifecycle, "stateDate": None, "sourceObservationIds": [status_obs["id"], capacity_obs["id"]]})
+            state_date = reported_operating_date(row) if lifecycle == "operating" else None
+            phase_source_ids = [status_obs["id"], capacity_obs["id"]]
+            if state_date:
+                date_obs = observation("src-eia-860-2024", "phase", phase_id, "operating_date", state_date, state_date)
+                observations.append(date_obs)
+                phase_source_ids.append(date_obs["id"])
+                phase_dates.append(state_date)
+            phases.append({"id": phase_id, "projectId": project_id, "name": f"Generator {row['Generator ID']}", "facilityIds": [facility_id], "lifecycleState": lifecycle, "stateDate": state_date, "sourceObservationIds": phase_source_ids})
             for owner_row in ownership_by_generator.get((plant_code, str(row["Generator ID"])), []):
                 owner_name = str(owner_row.get("Owner Name") or "").strip()
                 if not owner_name:
@@ -500,7 +674,22 @@ def build() -> dict[str, Any]:
         else:
             capacities.append({"kind": "electrical_mw", "value": nameplate, "status": "installed", "sourceObservationIds": [capacity_obs["id"]]})
 
-        limitations = ["EIA-860 covers generators at plants with at least 1 MW combined nameplate capacity; smaller systems are not individually mapped.", "Coordinates are publisher-reported plant observations and are displayed as approximate, not survey-grade.", "No facility-specific lifecycle intensity has been established.", "Ownership is shown only when EIA reports a joint or third-party owner; absence is never interpreted as 100% operator ownership."]
+        annual_generation = None
+        if rule.role == "electricity_generation":
+            generation_keys = {
+                (plant_code, str(row["Prime Mover"]), str(row["Energy Source 1"]))
+                for row in rows
+            }
+            generation_values = [generation_by_key[key] for key in generation_keys if key in generation_by_key]
+            if generation_values:
+                generation_mwh = round(sum(generation_values), 6)
+                generation_obs = observation("src-eia-923-2024", "facility", facility_id, "net_generation_2024", generation_mwh, generation_mwh)
+                generation_obs["rawUnit"] = "MWh"
+                observations.append(generation_obs)
+                annual_generation = {"value": generation_mwh, "unit": "MWh", "year": 2024, "sourceObservationIds": [generation_obs["id"]]}
+
+        coordinate_limitation = "USGS project/turbine geometry is linked by exact EIA plant ID; the displayed centroid is not a surveyed equipment point or legal project boundary." if spatial_source_id else "Coordinates are publisher-reported EIA plant observations and are displayed as approximate, not survey-grade."
+        limitations = ["EIA-860 covers generators at plants with at least 1 MW combined nameplate capacity; smaller systems are not individually mapped.", coordinate_limitation, "No facility-specific lifecycle intensity has been established.", "Ownership is shown only when EIA reports a joint or third-party owner; absence is never interpreted as 100% operator ownership."]
         if normalized_tech == "offshore_wind":
             limitations.append("EIA-860 does not provide the maritime-zone evidence required to distinguish territorial waters, EEZ, high seas, or disputed areas; context remains unknown.")
         if rule.classification in {"conditional", "unknown", "excluded"}:
@@ -508,7 +697,7 @@ def build() -> dict[str, Any]:
 
         facilities.append({
             "id": facility_id,
-            "externalIdentifiers": {"eiaPlantCode": str(plant_code), "eiaGeneratorIds": ",".join(generator_ids)},
+            "externalIdentifiers": {"eiaPlantCode": str(plant_code), "eiaGeneratorIds": ",".join(generator_ids), **spatial_external_identifiers},
             "officialName": plant_name if len(plant_techs[plant_code]) == 1 else f"{plant_name} — {rule.label}",
             "alternateNames": [],
             "projectId": project_id,
@@ -520,9 +709,9 @@ def build() -> dict[str, Any]:
             "classificationReason": rule.reason,
             "lifecycleEvidenceId": rule.lifecycle_id,
             "lifecycleState": "operating" if "OP" in statuses else "suspended",
-            "stateDate": None,
+            "stateDate": min(phase_dates) if phase_dates else None,
             "capacities": capacities,
-            "annualGeneration": None,
+            "annualGeneration": annual_generation,
             "location": location,
             "jurisdiction": {"countryCode": "US", "admin1": str(plant.get("State") or "") or None, "context": "unknown" if normalized_tech == "offshore_wind" else "land", "disputed": False, "evidenceObservationIds": [state_obs["id"]]},
             "operatorOrganizationIds": [operator_id],
@@ -532,6 +721,115 @@ def build() -> dict[str, Any]:
             "limitations": limitations,
             "verifiedAt": RETRIEVED_AT,
         })
+
+    # EIA-860M is a preliminary, concurrent observation. It contributes only
+    # planned capacity, lifecycle state, target month, and source coordinates;
+    # it never replaces the final annual EIA-860 record.
+    planned_groups: dict[tuple[int, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in planned_relevant:
+        rule = TECH_RULES[str(row["Technology"])]
+        planned_groups[(int(row["Plant ID"]), rule.technology)].append(row)
+    facility_by_id = {item["id"]: item for item in facilities}
+    planned_plant_techs: dict[int, set[str]] = defaultdict(set)
+    for plant_code, normalized_tech in planned_groups:
+        planned_plant_techs[plant_code].add(normalized_tech)
+
+    lifecycle_rank = {"unknown": 0, "proposed": 1, "permitted": 2, "under_construction": 3}
+    for (plant_code, normalized_tech), rows in sorted(planned_groups.items()):
+        rule = TECH_RULES[str(rows[0]["Technology"])]
+        facility_id = f"us-eia-{plant_code}-{normalized_tech}"
+        project_id = f"us-eia-project-{plant_code}"
+        plant_name = str(rows[0].get("Plant Name") or f"EIA plant code {plant_code} (name unavailable)")
+        generator_ids = sorted(str(row["Generator ID"]) for row in rows)
+        nameplate = round(sum(float(row["Nameplate Capacity (MW)"]) for row in rows if isinstance(row.get("Nameplate Capacity (MW)"), (int, float))), 6)
+        lifecycles = [planned_lifecycle(row.get("Status")) for row in rows]
+        lifecycle = max(lifecycles, key=lambda item: lifecycle_rank[item])
+        dates = [date for row in rows if (date := planned_operation_date(row))]
+        identity = observation(
+            "src-eia-860m-2026-05", "facility", facility_id, "planned_identity",
+            json.dumps({"plantName": plant_name, "generatorIds": generator_ids, "technologies": sorted({str(row["Technology"]) for row in rows})}, sort_keys=True),
+            plant_name, note="Preliminary monthly observation; final annual EIA-860 remains authoritative for installed generators.", observed_at="2026-05-31",
+        )
+        capacity_obs = observation("src-eia-860m-2026-05", "facility", facility_id, "planned_nameplate_capacity", nameplate, nameplate, note="Preliminary planned nameplate capacity; not installed capacity.", observed_at="2026-05-31")
+        capacity_obs["rawUnit"] = "MW"
+        state_obs = observation("src-eia-860m-2026-05", "facility", facility_id, "state", rows[0].get("Plant State"), rows[0].get("Plant State"), observed_at="2026-05-31")
+        observations.extend([identity, capacity_obs, state_obs])
+        capacity_kind = "storage_power_mw" if rule.role == "storage" else "electrical_mw"
+
+        operator_value = rows[0].get("Entity ID")
+        operator_id = f"us-eia-org-{int(operator_value)}" if isinstance(operator_value, (int, float)) else stable_id("us-eia-org", rows[0].get("Entity Name"))
+        if operator_id not in organizations:
+            operator_name = str(rows[0].get("Entity Name") or "Operator name unavailable")
+            operator_obs = observation("src-eia-860m-2026-05", "organization", operator_id, "official_name", operator_name, operator_name, observed_at="2026-05-31")
+            observations.append(operator_obs)
+            organizations[operator_id] = {
+                "id": operator_id, "officialName": operator_name, "alternateNames": [], "organizationType": "developer",
+                "jurisdictionCode": "US", "externalIdentifiers": {"eiaUtilityId": str(int(operator_value))} if isinstance(operator_value, (int, float)) else {},
+                "sourceObservationIds": [operator_obs["id"]],
+            }
+
+        phase_ids: list[str] = []
+        for row, phase_lifecycle in sorted(zip(rows, lifecycles, strict=True), key=lambda pair: str(pair[0]["Generator ID"])):
+            phase_id = stable_id("phase", "eia860m", plant_code, row["Generator ID"])
+            phase_ids.append(phase_id)
+            status_obs = observation("src-eia-860m-2026-05", "phase", phase_id, "planned_status", row.get("Status"), phase_lifecycle, observed_at="2026-05-31")
+            phase_source_ids = [status_obs["id"], capacity_obs["id"]]
+            observations.append(status_obs)
+            target_date = planned_operation_date(row)
+            if target_date:
+                date_obs = observation("src-eia-860m-2026-05", "phase", phase_id, "planned_operation_date", target_date, target_date, note="Publisher-reported target commercial-operation month; not a construction-start or guaranteed delivery date.", observed_at="2026-05-31")
+                observations.append(date_obs)
+                phase_source_ids.append(date_obs["id"])
+            phases.append({"id": phase_id, "projectId": project_id, "name": f"Planned generator {row['Generator ID']}", "facilityIds": [facility_id], "lifecycleState": phase_lifecycle, "stateDate": target_date, "sourceObservationIds": phase_source_ids})
+
+        if project_id in {item["id"] for item in projects_by_plant.values()}:
+            project = projects_by_plant[plant_code]
+            project["phaseIds"].extend(phase_ids)
+            if identity["id"] not in project["sourceObservationIds"]:
+                project["sourceObservationIds"].append(identity["id"])
+        else:
+            projects_by_plant[plant_code] = {"id": project_id, "officialName": plant_name, "alternateNames": [], "facilityIds": [facility_id], "phaseIds": phase_ids, "sourceObservationIds": [identity["id"]]}
+
+        existing = facility_by_id.get(facility_id)
+        if existing:
+            existing["capacities"].append({"kind": capacity_kind, "value": nameplate, "status": "planned", "sourceObservationIds": [capacity_obs["id"]]})
+            existing["phaseIds"].extend(phase_ids)
+            existing["sourceObservationIds"].extend([identity["id"], capacity_obs["id"], state_obs["id"]])
+            existing["operatorOrganizationIds"] = sorted(set([*existing["operatorOrganizationIds"], operator_id]))
+            prior_generators = set(existing["externalIdentifiers"]["eiaGeneratorIds"].split(","))
+            existing["externalIdentifiers"]["eiaGeneratorIds"] = ",".join(sorted(prior_generators | set(generator_ids)))
+            existing["limitations"].append("Planned capacity and target dates come from preliminary EIA-860M May 2026 and remain distinct from final annual installed observations.")
+            continue
+
+        latitude, longitude = rows[0].get("Latitude"), rows[0].get("Longitude")
+        valid_point = isinstance(latitude, (int, float)) and isinstance(longitude, (int, float)) and -90 <= float(latitude) <= 90 and -180 <= float(longitude) <= 180 and not (float(latitude) == 0 and float(longitude) == 0)
+        location_observations: list[dict[str, Any]] = []
+        if valid_point:
+            lat_obs = observation("src-eia-860m-2026-05", "facility", facility_id, "latitude", latitude, latitude, "medium", "Preliminary EIA-reported planned-plant coordinate; not survey-grade geometry.", observed_at="2026-05-31")
+            lon_obs = observation("src-eia-860m-2026-05", "facility", facility_id, "longitude", longitude, longitude, "medium", "Preliminary EIA-reported planned-plant coordinate; not survey-grade geometry.", observed_at="2026-05-31")
+            location_observations = [lat_obs, lon_obs]
+            location = {"geometryType": "point", "coordinates": [float(longitude), float(latitude)], "precision": "approximate_site", "confidence": "medium", "evidenceObservationIds": [lat_obs["id"], lon_obs["id"]], "method": "source_coordinates"}
+        else:
+            location = {"geometryType": "unplotted", "coordinates": None, "precision": "locality_only" if rows[0].get("County") else "unknown", "confidence": "low", "evidenceObservationIds": [state_obs["id"]], "method": "withheld_no_reliable_geometry"}
+        observations.extend(location_observations)
+        facilities.append({
+            "id": facility_id,
+            "externalIdentifiers": {"eiaPlantCode": str(plant_code), "eiaGeneratorIds": ",".join(generator_ids)},
+            "officialName": plant_name if len(planned_plant_techs[plant_code]) == 1 else f"{plant_name} — {rule.label}",
+            "alternateNames": [], "projectId": project_id, "phaseIds": phase_ids,
+            "technology": normalized_tech, "technologyLabel": rule.label, "energyRole": rule.role,
+            "classification": rule.classification, "classificationReason": rule.reason, "lifecycleEvidenceId": rule.lifecycle_id,
+            "lifecycleState": lifecycle, "stateDate": min(dates) if dates else None,
+            "capacities": [{"kind": capacity_kind, "value": nameplate, "status": "planned", "sourceObservationIds": [capacity_obs["id"]]}],
+            "annualGeneration": None, "location": location,
+            "jurisdiction": {"countryCode": "US", "admin1": str(rows[0].get("Plant State") or "") or None, "context": "unknown" if normalized_tech == "offshore_wind" else "land", "disputed": False, "evidenceObservationIds": [state_obs["id"]]},
+            "operatorOrganizationIds": [operator_id], "ownershipIds": [],
+            "sourceObservationIds": [identity["id"], capacity_obs["id"], state_obs["id"]], "conflicts": [],
+            "limitations": ["Preliminary EIA-860M May 2026 planned-generator observation; status, capacity, and target month may change in later releases.", "Target operation is not a construction-start date or a delivery guarantee.", "No facility-specific lifecycle intensity has been established.", *([rule.reason] if rule.classification in {"conditional", "unknown", "excluded"} else [])],
+            "verifiedAt": RETRIEVED_AT,
+        })
+        projects_by_plant[plant_code]["facilityIds"] = sorted(set(projects_by_plant[plant_code]["facilityIds"] + [facility_id]))
+        facility_by_id[facility_id] = facilities[-1]
 
     # National indicators, pinned to final 2024 values parsed from source snapshots.
     epm = first_annual_2024(ROOT / "data/raw/eia/epm-table-1-1.html")
@@ -561,6 +859,9 @@ def build() -> dict[str, Any]:
     eligible_capacity = round(sum(float(row["Summer Capacity (MW)"]) for row in relevant if TECH_RULES[str(row["Technology"])].classification == "eligible" and isinstance(row.get("Summer Capacity (MW)"), (int, float))), 6)
     utility_total_capacity = number(capacity[10])
     small_solar_capacity = number(capacity[11])
+    eia861m_small_solar_capacity, distributed_capacity = eia861m_distributed_capacity()
+    if abs(eia861m_small_solar_capacity - small_solar_capacity) > 0.01:
+        raise RuntimeError("EIA-861M small-scale solar capacity does not reconcile with Electric Power Annual")
     capacity_numerator = eligible_capacity + small_solar_capacity
     capacity_denominator = utility_total_capacity + small_solar_capacity
     cap_eligible_obs = observation("src-eia-860-2024", "country_indicator", "us-installed-capacity-share-2024", "eligible_utility_scale_summer_capacity", eligible_capacity, eligible_capacity)
@@ -569,7 +870,14 @@ def build() -> dict[str, Any]:
     cap_total_obs["rawUnit"] = "MW"
     cap_small_obs = observation("src-eia-epa-4-2a-2024", "country_indicator", "us-installed-capacity-share-2024", "small_scale_solar_capacity", small_solar_capacity, small_solar_capacity)
     cap_small_obs["rawUnit"] = "MW"
-    observations.extend([cap_eligible_obs, cap_total_obs, cap_small_obs])
+    cap_861m_solar_obs = observation("src-eia-861m-small-solar-2024", "country_indicator", "us-installed-capacity-share-2024", "reconciled_small_scale_solar_capacity", eia861m_small_solar_capacity, eia861m_small_solar_capacity)
+    cap_861m_solar_obs["rawUnit"] = "MW"
+    distributed_observations = []
+    for field, value in distributed_capacity.items():
+        item = observation("src-eia-861m-non-net-2024", "country_indicator", "us-installed-capacity-share-2024", f"non_net_metered_{field}", value, value)
+        item["rawUnit"] = "MWh" if field == "battery_energy_mwh" else "MW"
+        distributed_observations.append(item)
+    observations.extend([cap_eligible_obs, cap_total_obs, cap_small_obs, cap_861m_solar_obs, *distributed_observations])
 
     generation_calc = {
         "id": "calc-us-electricity-generation-share-2024",
@@ -593,17 +901,22 @@ def build() -> dict[str, Any]:
         "id": "calc-us-installed-capacity-share-2024",
         "formulaVersion": METHOD_VERSION,
         "formula": "100 × (eligible EIA-860 utility-scale net summer capacity + small-scale solar PV) / (all utility-scale net summer capacity + small-scale solar PV)",
-        "inputObservationIds": [cap_eligible_obs["id"], cap_total_obs["id"], cap_small_obs["id"]],
+        "inputObservationIds": [cap_eligible_obs["id"], cap_total_obs["id"], cap_small_obs["id"], cap_861m_solar_obs["id"], *[item["id"] for item in distributed_observations]],
         "inputs": [
             {"label": "Eligible utility-scale net summer capacity", "value": eligible_capacity, "unit": "MW", "included": True, "reason": "Generator rows classified eligible by V1 methodology."},
             {"label": "Estimated small-scale solar PV capacity", "value": small_solar_capacity, "unit": "MW", "included": True, "reason": "Eligible aggregate capacity; never plotted as facilities."},
             {"label": "All utility-scale net summer capacity", "value": utility_total_capacity, "unit": "MW", "included": True, "reason": "Matching national denominator from EIA Electric Power Annual."},
+            {"label": "Reconciled EIA-861M small-scale solar PV capacity", "value": eia861m_small_solar_capacity, "unit": "MW", "included": False, "reason": "Independent source observation matches the already included Electric Power Annual small-scale solar value; excluded to prevent double counting."},
+            *[
+                {"label": f"EIA-861M non-net-metered {field.replace('_', ' ')}", "value": value, "unit": "MWh" if field == "battery_energy_mwh" else "MW", "included": False, "reason": "Published below-1-MW aggregate preserved for coverage; excluded because it overlaps small-scale solar and is not a matching headline-calculation scope."}
+                for field, value in distributed_capacity.items()
+            ],
         ],
         "result": capacity_numerator / capacity_denominator * 100,
         "resultUnit": "percent",
         "executedAt": RETRIEVED_AT,
         "softwareVersion": "atlas-v0.1.0",
-        "limitations": ["Eligible utility-scale capacity is reproduced from EIA-860 generator rows; blank summer-capacity fields are not imputed.", "Hydropower, geothermal, and biomass remain outside the eligible numerator pending site/pathway evidence."],
+        "limitations": ["Eligible utility-scale capacity is reproduced from EIA-860 generator rows; blank summer-capacity fields are not imputed.", "EIA-861M distributed aggregates are preserved as unplotted reconciliation inputs and never added twice to the headline calculation.", "Hydropower, geothermal, and biomass remain outside the eligible numerator pending site/pathway evidence."],
     }
 
     country_indicators = [
@@ -622,7 +935,7 @@ def build() -> dict[str, Any]:
             "numerator": {"value": capacity_numerator, "unit": "MW", "definition": "Net summer capacity from V1-eligible utility-scale generators plus estimated small-scale solar PV."},
             "denominator": {"value": capacity_denominator, "unit": "MW", "definition": "All utility-scale net summer capacity plus estimated small-scale solar PV capacity."},
             "productionOrConsumption": "production", "importsTreatment": "Capacity is domestic physical capacity; imports do not apply.", "storageTreatment": "Pumped hydro, batteries, and other storage are excluded from primary generating capacity.",
-            "calculationId": capacity_calc["id"], "sourceIds": ["src-eia-860-2024", "src-eia-epa-4-2a-2024", "src-nlr-lifecycle-2021", "src-nrc-power-reactors"], "verifiedAt": RETRIEVED_AT,
+            "calculationId": capacity_calc["id"], "sourceIds": ["src-eia-860-2024", "src-eia-861m-small-solar-2024", "src-eia-861m-non-net-2024", "src-eia-epa-4-2a-2024", "src-nlr-lifecycle-2021", "src-nrc-power-reactors"], "verifiedAt": RETRIEVED_AT,
             "limitations": capacity_calc["limitations"],
         },
     ]
@@ -634,11 +947,11 @@ def build() -> dict[str, Any]:
     geographies = [{"code": code, "name": name, "type": geography_type} for code, name, geography_type in TARGET_GEOGRAPHIES]
     coverage = [{
         "id": "coverage-us-national-electricity-2024", "geographyCode": "US", "technology": None, "publicationStatus": "verified_wave", "status": "substantial",
-        "scope": "Verified national electricity baseline; EIA-860 utility-scale facilities, EIA national generation/capacity totals, and explicit distributed-resource gap.",
+        "scope": "Verified national electricity baseline; final EIA-860 installed facilities, preliminary EIA-860M planned generators, EIA national totals, and explicit distributed-resource gap.",
         "measuredCoverage": {"numerator": normalization, "denominator": normalization, "unit": "EIA-860 relevant operable generator rows", "method": "Relevant source rows normalized into generator phases; no row dropped.", "resultPercent": 100},
         "authoritativeBaseline": True, "facilitySourcesPresent": True, "reproducibleMethod": True,
-        "visibleLimitations": [f"{len(facilities) - len(mapped):,} facility-technology records are unplotted because a valid publisher-reported coordinate was unavailable.", f"Mapped nameplate power coverage is {mapped_mw / total_mw * 100:.2f}% for the included facility scope.", "Systems below the EIA-860 plant threshold are represented only in national aggregates where EIA publishes them; no coordinates are invented.", "Heat infrastructure, total energy supply, final energy consumption, complete retirement history, and maritime-zone geometry are not assessed in this release.", "Facility generation from EIA-923 is a prioritized next ingestion and is not inferred from capacity.", "Ownership rows cover only EIA-reported joint or third-party interests; missing ownership is not inferred."],
-        "sourceIds": ["src-eia-860-2024", "src-eia-epm-1-1-2024", "src-eia-epm-1-1a-2024", "src-eia-epa-4-2a-2024"], "assessedAt": RETRIEVED_AT,
+        "visibleLimitations": [f"{len(facilities) - len(mapped):,} facility-technology records are unplotted because a valid publisher-reported coordinate was unavailable.", f"Mapped nameplate power coverage is {mapped_mw / total_mw * 100:.2f}% for the included facility scope.", "EIA-860M planned capacity, status, and target dates are preliminary May 2026 observations and are never counted as installed or guaranteed delivery.", "Systems below the EIA-860 plant threshold are represented only in national aggregates where EIA publishes them; no coordinates are invented.", "Final 2024 facility generation is published only where an exact EIA plant, prime-mover, and fuel-code observation exists; it is never inferred from capacity.", "Heat infrastructure, total energy supply, final energy consumption, complete retirement history, and maritime-zone geometry are not assessed in this release.", "Ownership rows cover only EIA-reported joint or third-party interests; missing ownership is not inferred."],
+        "sourceIds": ["src-eia-860-2024", "src-eia-860m-2026-05", "src-eia-861m-small-solar-2024", "src-eia-861m-non-net-2024", "src-eia-923-2024", "src-eia-epm-1-1-2024", "src-eia-epm-1-1a-2024", "src-eia-epa-4-2a-2024", "src-usgs-uspvdb-4.0", "src-usgs-uswtdb-9.0"], "assessedAt": RETRIEVED_AT,
     }]
     published_us_technologies = {facility["technology"] for facility in facilities}
     for technology in sorted(published_us_technologies):
@@ -646,11 +959,11 @@ def build() -> dict[str, Any]:
         subset_mapped = [facility for facility in subset if facility["location"]["geometryType"] != "unplotted"]
         coverage.append({
             "id": f"coverage-us-{technology}-2024", "geographyCode": "US", "technology": technology, "publicationStatus": "verified_wave", "status": "substantial" if subset_mapped else "sparse",
-            "scope": "EIA-860 final 2024 generator inventory within its documented plant threshold.",
+            "scope": "EIA-860 final 2024 installed inventory plus distinct preliminary EIA-860M May 2026 planned observations.",
             "measuredCoverage": {"numerator": len(subset_mapped), "denominator": len(subset), "unit": "facility-technology records", "method": "Publisher-reported coordinates passed range validation; no geocoded centroids.", "resultPercent": len(subset_mapped) / len(subset) * 100},
             "authoritativeBaseline": True, "facilitySourcesPresent": True, "reproducibleMethod": True,
-            "visibleLimitations": ["This coordinate measure does not prove exhaustive coverage below EIA's reporting threshold.", "Reported coordinates are approximate plant observations, not verified footprints."],
-            "sourceIds": ["src-eia-860-2024"], "assessedAt": RETRIEVED_AT,
+            "visibleLimitations": ["This coordinate measure does not prove exhaustive coverage below EIA's reporting threshold.", "USGS enrichment is limited to exact EIA-ID matches; project centroids are not surveyed equipment points or legal boundaries." if technology in {"solar_photovoltaic", "onshore_wind", "offshore_wind"} else "Reported coordinates are approximate plant observations, not verified footprints."],
+            "sourceIds": ["src-eia-860-2024", "src-eia-860m-2026-05", *(["src-usgs-uspvdb-4.0"] if technology == "solar_photovoltaic" else []), *(["src-usgs-uswtdb-9.0"] if technology in {"onshore_wind", "offshore_wind"} else [])], "assessedAt": RETRIEVED_AT,
         })
     for technology in sorted(set(ALL_TECHNOLOGIES) - published_us_technologies):
         coverage.append({
@@ -703,11 +1016,12 @@ def build() -> dict[str, Any]:
                 "calculation": "calculation-v1",
             },
             "sourceSnapshotDates": {item["id"]: item["publicationDate"] or item["accessedAt"] for item in sources},
-            "changeSummary": "Makes compact project and phase relationships self-contained and adds strict compact/full drift verification.",
+            "changeSummary": "Adds final 2024 facility generation, preliminary May 2026 planned generators, distributed-capacity reconciliation, and exact-ID USGS solar/wind spatial enrichment.",
             "changeHistory": [
                 {"version": "2024.1", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Initial verified U.S. national electricity baseline and EIA-860 facility wave."},
                 {"version": "2024.2", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Added withheld target coverage, explicit publication status, source-backed ownership, and stronger browser traceability."},
-                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Made compact project and phase relationships self-contained and added strict compact/full drift verification."},
+                {"version": "2024.3", "releasedAt": "2026-07-13T00:00:00Z", "summary": "Made compact project and phase relationships self-contained and added strict compact/full drift verification."},
+                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Added final generation and operating dates, preliminary planned generators, distributed-capacity reconciliation, and exact-ID USGS solar/wind spatial enrichment."},
             ],
             "correctionsUrl": CORRECTIONS_URL,
             "limitations": coverage[0]["visibleLimitations"],
@@ -740,7 +1054,8 @@ def activate_staged(staged: dict[Path, Path], order: tuple[Path, ...]) -> None:
             if destination.exists():
                 descriptor, backup_name = tempfile.mkstemp(prefix=f".{destination.name}-backup-", dir=destination.parent)
                 os.close(descriptor)
-                Path(backup_name).write_bytes(destination.read_bytes())
+                Path(backup_name).unlink()
+                os.link(destination, backup_name)
                 backups[destination] = Path(backup_name)
             else:
                 backups[destination] = None
@@ -795,9 +1110,17 @@ def main(argv: list[str] | None = None) -> None:
     compact_facilities = []
     for facility in data["facilities"]:
         compact = dict(facility)
-        compact["sourceObservationIds"] = ["compact-src-eia-860-2024"]
+        compact["sourceObservationIds"] = []
+        if any(item["status"] == "installed" for item in facility["capacities"]):
+            compact["sourceObservationIds"].append("compact-src-eia-860-2024")
+        if any(item["status"] == "planned" for item in facility["capacities"]):
+            compact["sourceObservationIds"].append("compact-src-eia-860m-2026-05")
         if compact["technology"] == "nuclear_fission":
             compact["sourceObservationIds"].append("compact-src-nrc-power-reactors")
+        if "uspvdbCaseId" in compact["externalIdentifiers"]:
+            compact["sourceObservationIds"].append("compact-src-usgs-uspvdb-4.0")
+        if "uswtdbTurbineCount" in compact["externalIdentifiers"]:
+            compact["sourceObservationIds"].append("compact-src-usgs-uswtdb-9.0")
         compact["limitations"] = [facility["classificationReason"]]
         if compact["location"]["geometryType"] == "unplotted":
             compact["limitations"].append("No valid publisher-reported coordinate; the record is searchable but unplotted.")

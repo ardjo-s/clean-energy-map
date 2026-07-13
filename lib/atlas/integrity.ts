@@ -62,6 +62,17 @@ function facilityIssues(
     }
   }
 
+  if (facility.annualGeneration) {
+    for (const observationId of facility.annualGeneration.sourceObservationIds) {
+      const observation = observations.get(observationId);
+      if (!observation) {
+        issues.push({ code: "generation_missing_observation", message: `Missing generation observation ${observationId}.`, entityId: facility.id });
+      } else if (observation.normalizedValue !== facility.annualGeneration.value || observation.rawUnit !== facility.annualGeneration.unit) {
+        issues.push({ code: "generation_observation_mismatch", message: "Facility generation must exactly match its source observation.", entityId: facility.id });
+      }
+    }
+  }
+
   for (const observationId of facility.jurisdiction.evidenceObservationIds) {
     if (!observations.has(observationId)) issues.push({ code: "jurisdiction_missing_observation", message: `Missing jurisdiction observation ${observationId}.`, entityId: facility.id });
   }
@@ -339,13 +350,7 @@ export function validateBrowserDatasetIntegrity(dataset: AtlasDataset): Integrit
   return issues;
 }
 
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value).toSorted(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
+const equivalent = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
 function compareCollection<T>(
   compact: T[],
@@ -364,7 +369,7 @@ function compareCollection<T>(
   const fullById = new Map(full.map((item) => [key(item), item]));
   for (const [id, item] of compactById) {
     const fullItem = fullById.get(id);
-    if (!fullItem || canonical(item) !== canonical(fullItem)) {
+    if (!fullItem || !equivalent(item, fullItem)) {
       issues.push({ code: `compact_${collection}_mismatch`, message: `Compact and full ${collection} ${id} differ.`, entityId: id });
     }
   }
@@ -396,8 +401,12 @@ function expectedCompactSourcePointer(
 }
 
 function expectedCompactFacility(facility: AtlasDataset["facilities"][number]) {
-  const sourceObservationIds = ["compact-src-eia-860-2024"];
+  const sourceObservationIds: string[] = [];
+  if (facility.capacities.some((capacity) => capacity.status === "installed")) sourceObservationIds.push("compact-src-eia-860-2024");
+  if (facility.capacities.some((capacity) => capacity.status === "planned")) sourceObservationIds.push("compact-src-eia-860m-2026-05");
   if (facility.technology === "nuclear_fission") sourceObservationIds.push("compact-src-nrc-power-reactors");
+  if ("uspvdbCaseId" in facility.externalIdentifiers) sourceObservationIds.push("compact-src-usgs-uspvdb-4.0");
+  if ("uswtdbTurbineCount" in facility.externalIdentifiers) sourceObservationIds.push("compact-src-usgs-uswtdb-9.0");
   const limitations = [facility.classificationReason];
   if (facility.location.geometryType === "unplotted") limitations.push("No valid publisher-reported coordinate; the record is searchable but unplotted.");
   if (facility.technology === "offshore_wind") limitations.push("Maritime-zone context is not established by EIA-860 and remains unknown.");
@@ -406,7 +415,7 @@ function expectedCompactFacility(facility: AtlasDataset["facilities"][number]) {
 
 export function validateReleasePairIntegrity(compact: AtlasDataset, full: AtlasDataset): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
-  if (canonical(compact.release) !== canonical(full.release)) {
+  if (!equivalent(compact.release, full.release)) {
     issues.push({ code: "compact_release_mismatch", message: "Compact and full release metadata differ." });
   }
 
@@ -433,7 +442,7 @@ export function validateReleasePairIntegrity(compact: AtlasDataset, full: AtlasD
   const fullObservations = new Map(full.observations.map((item) => [item.id, item]));
   for (const observation of sharedObservations) {
     const fullObservation = fullObservations.get(observation.id);
-    if (!fullObservation || canonical(observation) !== canonical(fullObservation)) {
+    if (!fullObservation || !equivalent(observation, fullObservation)) {
       issues.push({ code: "compact_observation_mismatch", message: `Compact and full observation ${observation.id} differ.`, entityId: observation.id });
     }
   }

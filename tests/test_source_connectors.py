@@ -52,6 +52,48 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(set(record["values"]), set(record["field_observation_ids"]))
             self.assertTrue(set(record["field_observation_ids"].values()) <= ids)
 
+    def test_eia923_generation_preserves_published_grain(self) -> None:
+        rows = [
+            {"Plant Id": 1, "Reported\nPrime Mover": "WT", "Reported\nFuel Type Code": "WND", "Net Generation\n(Megawatthours)": 10},
+            {"Plant Id": 1, "Reported\nPrime Mover": "WT", "Reported\nFuel Type Code": "WND", "Net Generation\n(Megawatthours)": 2.5},
+            {"Plant Id": 1, "Reported\nPrime Mover": "IC", "Reported\nFuel Type Code": "DFO", "Net Generation\n(Megawatthours)": 99},
+            {"Plant Id": 2, "Reported\nPrime Mover": "PV", "Reported\nFuel Type Code": "SUN", "Net Generation\n(Megawatthours)": "."},
+        ]
+        self.assertEqual(ingest.eia923_generation_by_key(rows), {(1, "WT", "WND"): 12.5, (1, "IC", "DFO"): 99.0})
+
+    def test_eia860m_planned_status_and_target_date_are_explicit(self) -> None:
+        self.assertEqual(ingest.planned_lifecycle("(U) Under construction"), "under_construction")
+        self.assertEqual(ingest.planned_lifecycle("(T) Regulatory approvals received"), "permitted")
+        self.assertEqual(ingest.planned_lifecycle("(P) Planned"), "proposed")
+        self.assertEqual(ingest.planned_lifecycle("unrecognized"), "unknown")
+        self.assertEqual(ingest.planned_operation_date({"Planned Operation Year": 2027, "Planned Operation Month": 4}), "2027-04-01")
+        self.assertIsNone(ingest.planned_operation_date({"Planned Operation Year": 2027, "Planned Operation Month": 13}))
+
+    def test_eia861m_distributed_capacity_preserves_aggregate_grain(self) -> None:
+        small_solar, non_net = ingest.eia861m_distributed_capacity()
+        self.assertEqual(small_solar, 53228.099)
+        self.assertEqual(non_net["total_mw"], 5358.65)
+        self.assertAlmostEqual(sum(value for field, value in non_net.items() if field not in {"battery_energy_mwh", "total_mw"}), non_net["total_mw"])
+
+    def test_usgs_spatial_enrichment_requires_exact_eia_ids(self) -> None:
+        self.assertEqual(ingest.compact_date(20240229, "2026-04-01"), "2024-02-29")
+        self.assertEqual(ingest.compact_date(20240231, "2026-04-01"), "2026-04-01")
+        solar = ingest.uspvdb_projects_by_eia([
+            {"eia_id": 7, "case_id": 41, "ylat": 40.0, "xlong": -75.0},
+            {"eia_id": None, "case_id": 42, "ylat": 41.0, "xlong": -76.0},
+        ])
+        self.assertEqual(set(solar), {7})
+        with self.assertRaisesRegex(RuntimeError, "Duplicate USPVDB EIA identifier"):
+            ingest.uspvdb_projects_by_eia([{"eia_id": 7, "ylat": 40.0, "xlong": -75.0}, {"eia_id": 7, "ylat": 41.0, "xlong": -76.0}])
+
+        wind = ingest.uswtdb_centroids_by_eia([
+            {"eia_id": 9, "case_id": 2, "ylat": 40.0, "xlong": -76.0, "t_conf_loc": 3},
+            {"eia_id": 9, "case_id": 1, "ylat": 42.0, "xlong": -74.0, "t_conf_loc": 2},
+            {"eia_id": None, "case_id": 3, "ylat": 0.0, "xlong": 0.0, "t_conf_loc": 3},
+        ])[9]
+        self.assertEqual((wind["latitude"], wind["longitude"], wind["turbineCount"]), (41.0, -75.0, 2))
+        self.assertEqual(wind["minimumLocationConfidence"], 2)
+
     def test_second_import_has_no_duplicate_and_snapshots_are_immutable(self) -> None:
         source = dict(self.eia_meta, checksum=connectors.digest(self.eia_raw))
         with tempfile.TemporaryDirectory() as directory:
