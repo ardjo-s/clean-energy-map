@@ -27,9 +27,9 @@ OUTPUT = ROOT / "public/data/atlas-v1.json"
 FULL_OUTPUT = ROOT / "public/data/downloads/atlas-v1-full.json"
 RAW_ROWS = ROOT / "public/data/downloads/eia860-relevant-generators.jsonl"
 RAW_OWNERSHIP_ROWS = ROOT / "public/data/downloads/eia860-relevant-ownership.jsonl"
-RETRIEVED_AT = "2026-07-12T19:00:00Z"
+RETRIEVED_AT = "2026-07-13T00:00:00Z"
 METHOD_VERSION = "1.1.0"
-DATASET_VERSION = "2024.2"
+DATASET_VERSION = "2024.3"
 CORRECTIONS_URL = "https://github.com/ardjo-s/clean-energy-map/issues/new?labels=data-correction"
 EXPECTED_EIA_SHA256 = "0aaae04812cd4ab87a3e346bdf93848a3cc15053fd4dc2a4cf82d2aeac95f12b"
 EXPECTED_NLR_SHA256 = "ef4885c8519ff7fbcb5147842dc0549d7b9955b28eeee23609ad9032a37bd5cb"
@@ -690,7 +690,7 @@ def build() -> dict[str, Any]:
         "_rawRows": "\n".join(raw_rows) + "\n",
         "_rawOwnershipRows": "\n".join(raw_ownership_rows) + "\n",
         "release": {
-            "id": "atlas-v1-us-wave-2024.2",
+            "id": f"atlas-v1-us-wave-{DATASET_VERSION}",
             "version": DATASET_VERSION,
             "releasedAt": RETRIEVED_AT,
             "methodologyReleaseId": "methodology-1.1.0",
@@ -703,10 +703,11 @@ def build() -> dict[str, Any]:
                 "calculation": "calculation-v1",
             },
             "sourceSnapshotDates": {item["id"]: item["publicationDate"] or item["accessedAt"] for item in sources},
-            "changeSummary": "Adds explicit target-geography coverage states, calculation observations in the web release, and source-backed EIA ownership relationships.",
+            "changeSummary": "Makes compact project and phase relationships self-contained and adds strict compact/full drift verification.",
             "changeHistory": [
                 {"version": "2024.1", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Initial verified U.S. national electricity baseline and EIA-860 facility wave."},
-                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Added withheld target coverage, explicit publication status, source-backed ownership, and stronger browser traceability."},
+                {"version": "2024.2", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Added withheld target coverage, explicit publication status, source-backed ownership, and stronger browser traceability."},
+                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Made compact project and phase relationships self-contained and added strict compact/full drift verification."},
             ],
             "correctionsUrl": CORRECTIONS_URL,
             "limitations": coverage[0]["visibleLimitations"],
@@ -818,19 +819,44 @@ def main(argv: list[str] | None = None) -> None:
         for organization in data["organizations"]
         for observation_id in organization["sourceObservationIds"]
     }
+    project_ids = {facility["projectId"] for facility in compact_facilities}
+    phase_ids = {phase_id for facility in compact_facilities for phase_id in facility["phaseIds"]}
+    compact_projects = [item for item in data["projects"] if item["id"] in project_ids]
+    compact_phases = [item for item in data["phases"] if item["id"] in phase_ids]
+    relationship_observation_ids = {
+        observation_id
+        for collection in (compact_projects, compact_phases)
+        for item in collection
+        for observation_id in item["sourceObservationIds"]
+    }
+    facility_observation_ids: set[str] = set()
+    for facility in compact_facilities:
+        facility_observation_ids.update(facility["location"]["evidenceObservationIds"])
+        facility_observation_ids.update(facility["jurisdiction"]["evidenceObservationIds"])
+        for capacity in facility["capacities"]:
+            facility_observation_ids.update(capacity["sourceObservationIds"])
+        if facility["annualGeneration"]:
+            facility_observation_ids.update(facility["annualGeneration"]["sourceObservationIds"])
+    required_observation_ids = calculation_observation_ids | ownership_observation_ids | organization_observation_ids | relationship_observation_ids | facility_observation_ids
     browser_evidence = [
         item
         for item in data["observations"]
-        if item["id"] in calculation_observation_ids or item["id"] in ownership_observation_ids or item["id"] in organization_observation_ids
+        if item["id"] in required_observation_ids
     ]
     compact_data = {
         **data,
         "observations": source_pointers + browser_evidence,
-        "projects": [],
-        "phases": [],
+        "projects": compact_projects,
+        "phases": compact_phases,
         "facilities": compact_facilities,
     }
     compact_encoded = json.dumps(compact_data, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    available_observations = {item["id"] for item in compact_data["observations"]}
+    if not required_observation_ids <= available_observations:
+        missing = sorted(required_observation_ids - available_observations)
+        raise RuntimeError(f"Compact candidate is missing referenced observations: {missing[:5]}")
+    if {item["id"] for item in compact_projects} != project_ids or {item["id"] for item in compact_phases} != phase_ids:
+        raise RuntimeError("Compact candidate is missing referenced projects or phases")
     candidates = {
         FULL_OUTPUT: full_encoded,
         OUTPUT: compact_encoded,

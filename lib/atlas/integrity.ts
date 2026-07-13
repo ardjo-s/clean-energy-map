@@ -294,6 +294,8 @@ export function validateBrowserDatasetIntegrity(dataset: AtlasDataset): Integrit
   const organizations = new Set(dataset.organizations.map((item) => item.id));
   const facilities = new Set(dataset.facilities.map((item) => item.id));
   const ownership = new Set(dataset.ownership.map((item) => item.id));
+  const projects = new Set(dataset.projects.map((item) => item.id));
+  const phases = new Set(dataset.phases.map((item) => item.id));
 
   for (const calculation of dataset.calculations) {
     for (const observationId of calculation.inputObservationIds) {
@@ -313,6 +315,10 @@ export function validateBrowserDatasetIntegrity(dataset: AtlasDataset): Integrit
     }
   }
   for (const facility of dataset.facilities) {
+    if (!projects.has(facility.projectId)) issues.push({ code: "browser_facility_missing_project", message: `Missing browser project ${facility.projectId}.`, entityId: facility.id });
+    for (const phaseId of facility.phaseIds) {
+      if (!phases.has(phaseId)) issues.push({ code: "browser_facility_missing_phase", message: `Missing browser phase ${phaseId}.`, entityId: facility.id });
+    }
     for (const observationId of facility.sourceObservationIds) {
       if (!observations.has(observationId)) issues.push({ code: "browser_facility_missing_pointer", message: `Missing browser source pointer ${observationId}.`, entityId: facility.id });
     }
@@ -320,42 +326,116 @@ export function validateBrowserDatasetIntegrity(dataset: AtlasDataset): Integrit
       if (!ownership.has(ownershipId)) issues.push({ code: "browser_facility_missing_ownership", message: `Missing browser ownership ${ownershipId}.`, entityId: facility.id });
     }
   }
+  for (const project of dataset.projects) {
+    for (const observationId of project.sourceObservationIds) {
+      if (!observations.has(observationId)) issues.push({ code: "browser_project_missing_observation", message: `Missing browser project observation ${observationId}.`, entityId: project.id });
+    }
+  }
+  for (const phase of dataset.phases) {
+    for (const observationId of phase.sourceObservationIds) {
+      if (!observations.has(observationId)) issues.push({ code: "browser_phase_missing_observation", message: `Missing browser phase observation ${observationId}.`, entityId: phase.id });
+    }
+  }
   return issues;
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value).toSorted(([left], [right]) => left.localeCompare(right)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function compareCollection<T>(
+  compact: T[],
+  full: T[],
+  key: (item: T) => string,
+  collection: string,
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  for (const id of duplicates(compact.map(key))) {
+    issues.push({ code: `duplicate_compact_${collection}_id`, message: `Duplicate compact ${collection} identifier: ${id}.`, entityId: id });
+  }
+  for (const id of duplicates(full.map(key))) {
+    issues.push({ code: `duplicate_full_${collection}_id`, message: `Duplicate full ${collection} identifier: ${id}.`, entityId: id });
+  }
+  const compactById = new Map(compact.map((item) => [key(item), item]));
+  const fullById = new Map(full.map((item) => [key(item), item]));
+  for (const [id, item] of compactById) {
+    const fullItem = fullById.get(id);
+    if (!fullItem || canonical(item) !== canonical(fullItem)) {
+      issues.push({ code: `compact_${collection}_mismatch`, message: `Compact and full ${collection} ${id} differ.`, entityId: id });
+    }
+  }
+  for (const id of fullById.keys()) {
+    if (!compactById.has(id)) issues.push({ code: `compact_${collection}_missing`, message: `Compact release is missing ${collection} ${id}.`, entityId: id });
+  }
+  return issues;
+}
+
+function expectedCompactSourcePointer(
+  source: AtlasDataset["sources"][number],
+  release: AtlasDataset["release"],
+): AtlasDataset["observations"][number] {
+  return {
+    id: `compact-${source.id}`,
+    sourceId: source.id,
+    entityType: "methodology",
+    entityId: release.methodologyReleaseId,
+    field: "source_pointer",
+    rawValue: source.id,
+    rawUnit: null,
+    normalizedValue: source.id,
+    observedAt: null,
+    retrievedAt: release.releasedAt,
+    confidence: "high",
+    conflictGroup: null,
+    reviewerNote: "Full field-level observations are in /data/downloads/atlas-v1-full.json.",
+  };
+}
+
+function expectedCompactFacility(facility: AtlasDataset["facilities"][number]) {
+  const sourceObservationIds = ["compact-src-eia-860-2024"];
+  if (facility.technology === "nuclear_fission") sourceObservationIds.push("compact-src-nrc-power-reactors");
+  const limitations = [facility.classificationReason];
+  if (facility.location.geometryType === "unplotted") limitations.push("No valid publisher-reported coordinate; the record is searchable but unplotted.");
+  if (facility.technology === "offshore_wind") limitations.push("Maritime-zone context is not established by EIA-860 and remains unknown.");
+  return { ...facility, sourceObservationIds, limitations };
 }
 
 export function validateReleasePairIntegrity(compact: AtlasDataset, full: AtlasDataset): IntegrityIssue[] {
   const issues: IntegrityIssue[] = [];
-  const releaseFields = ["id", "version", "buildId", "methodologyReleaseId"] as const;
-  for (const field of releaseFields) {
-    if (compact.release[field] !== full.release[field]) {
-      issues.push({ code: "compact_release_mismatch", message: `Compact and full release ${field} differ.` });
-    }
-  }
-  if (JSON.stringify(compact.release.schemaVersions) !== JSON.stringify(full.release.schemaVersions)) {
-    issues.push({ code: "compact_schema_version_mismatch", message: "Compact and full schema versions differ." });
+  if (canonical(compact.release) !== canonical(full.release)) {
+    issues.push({ code: "compact_release_mismatch", message: "Compact and full release metadata differ." });
   }
 
-  const fullFacilities = new Set(full.facilities.map((item) => item.id));
-  const fullProjects = new Set(full.projects.map((item) => item.id));
-  const fullPhases = new Set(full.phases.map((item) => item.id));
-  for (const facility of compact.facilities) {
-    if (!fullFacilities.has(facility.id)) {
-      issues.push({ code: "compact_unknown_facility", message: "Compact facility is absent from the full release.", entityId: facility.id });
+  issues.push(...compareCollection(compact.facilities, full.facilities.map(expectedCompactFacility), (item) => item.id, "facility"));
+  issues.push(...compareCollection(compact.methodologyReleases, full.methodologyReleases, (item) => item.id, "methodology"));
+  issues.push(...compareCollection(compact.geographies, full.geographies, (item) => item.code, "geography"));
+  issues.push(...compareCollection(compact.sources, full.sources, (item) => item.id, "source"));
+  issues.push(...compareCollection(compact.organizations, full.organizations, (item) => item.id, "organization"));
+  issues.push(...compareCollection(compact.projects, full.projects, (item) => item.id, "project"));
+  issues.push(...compareCollection(compact.phases, full.phases, (item) => item.id, "phase"));
+  issues.push(...compareCollection(compact.ownership, full.ownership, (item) => item.id, "ownership"));
+  issues.push(...compareCollection(compact.lifecycleEvidence, full.lifecycleEvidence, (item) => item.id, "lifecycle"));
+  issues.push(...compareCollection(compact.countryIndicators, full.countryIndicators, (item) => item.id, "indicator"));
+  issues.push(...compareCollection(compact.calculations, full.calculations, (item) => item.id, "calculation"));
+  issues.push(...compareCollection(compact.coverage, full.coverage, (item) => item.id, "coverage"));
+  const compactPointers = compact.observations.filter((item) => item.id.startsWith("compact-"));
+  const sharedObservations = compact.observations.filter((item) => !item.id.startsWith("compact-"));
+  issues.push(...compareCollection(
+    compactPointers,
+    full.sources.map((source) => expectedCompactSourcePointer(source, full.release)),
+    (item) => item.id,
+    "source_pointer",
+  ));
+  const fullObservations = new Map(full.observations.map((item) => [item.id, item]));
+  for (const observation of sharedObservations) {
+    const fullObservation = fullObservations.get(observation.id);
+    if (!fullObservation || canonical(observation) !== canonical(fullObservation)) {
+      issues.push({ code: "compact_observation_mismatch", message: `Compact and full observation ${observation.id} differ.`, entityId: observation.id });
     }
-    if (!fullProjects.has(facility.projectId)) {
-      issues.push({ code: "compact_dangling_project", message: `Compact project ${facility.projectId} is absent from the full release.`, entityId: facility.id });
-    }
-    for (const phaseId of facility.phaseIds) {
-      if (!fullPhases.has(phaseId)) {
-        issues.push({ code: "compact_dangling_phase", message: `Compact phase ${phaseId} is absent from the full release.`, entityId: facility.id });
-      }
-    }
-  }
-  if (compact.facilities.length !== full.facilities.length) {
-    issues.push({ code: "compact_facility_count_mismatch", message: "Compact and full facility counts differ." });
-  }
-  if (compact.geographies.length !== full.geographies.length) {
-    issues.push({ code: "compact_geography_count_mismatch", message: "Compact and full geography counts differ." });
   }
   return issues;
 }
