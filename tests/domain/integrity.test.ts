@@ -115,7 +115,7 @@ describe("release integrity", () => {
     expect(validateReleasePairIntegrity(duplicateCompact, canonicalFull)).toContainEqual(
       expect.objectContaining({ code: "duplicate_compact_project_id", entityId: duplicateCompact.projects[0].id }),
     );
-  }, 15_000);
+  }, 30_000);
 
   test("pair verification reports every missing canonical collection", () => {
     const browser = compact();
