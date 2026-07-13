@@ -2,6 +2,21 @@
   "name": "verifiable-clean-energy-atlas",
   "version": "0.1.0",
   "private": true,
+  "description": "Source-backed map of U.S. clean-energy infrastructure, generation, plans, provenance, and uncertainty.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ardjo-s/clean-energy-map.git"
+  },
+  "homepage": "https://clean-energy-map.vercel.app",
+  "bugs": {
+    "url": "https://github.com/ardjo-s/clean-energy-map/issues"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.18"
+    }
+  },
   "engines": {
     "node": "22.x"
   },

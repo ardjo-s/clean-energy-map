@@ -1,0 +1,60 @@
+name: Data correction
+description: Challenge a facility, project, date, generation value, location, classification, or source.
+title: "[Data]: "
+labels: [data-correction]
+body:
+  - type: markdown
+    attributes:
+      value: A correction must remain source-backed. Disagreement is preserved until evidence resolves it.
+  - type: input
+    id: record
+    attributes:
+      label: Record URL or stable identifier
+      placeholder: https://clean-energy-map.vercel.app/?facility=... or us-eia-...
+    validations:
+      required: true
+  - type: dropdown
+    id: field
+    attributes:
+      label: Affected field
+      options:
+        - Energy type or classification
+        - Capacity
+        - Generation
+        - Lifecycle status
+        - Operating or planned date
+        - Location
+        - Ownership
+        - Source or provenance
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current value and proposed correction
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Authoritative evidence
+      description: Provide publisher, title, release or observation period, publication date, URL, and exact relevant field.
+    validations:
+      required: true
+  - type: textarea
+    id: licence
+    attributes:
+      label: Licence or access restrictions
+      description: State known redistribution, attribution, access, or confidentiality constraints.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and understand that conflicting observations may remain visible.
+          required: true
+        - label: I did not include confidential or unlawfully redistributed material.
+          required: true

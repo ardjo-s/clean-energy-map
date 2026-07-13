@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a focused, evidence-compatible improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem is not solved today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Smallest useful outcome
+      description: Describe the first verifiable version, not a broad roadmap.
+    validations:
+      required: true
+  - type: textarea
+    id: trust
+    attributes:
+      label: Data, provenance, accessibility, or security impact
+      description: Note new sources, claims, permissions, or trust boundaries; write None when not applicable.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and documentation.
+          required: true
