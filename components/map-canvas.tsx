@@ -92,12 +92,12 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !viewState) return;
+    restoredViewRef.current = viewState;
+    map.stop();
     const center = map.getCenter();
     if (Math.abs(center.lng - viewState.longitude) > 0.0001 || Math.abs(center.lat - viewState.latitude) > 0.0001 || Math.abs(map.getZoom() - viewState.zoom) > 0.01) {
-      restoredViewRef.current = viewState;
-      map.stop();
       map.jumpTo({ center: [viewState.longitude, viewState.latitude], zoom: viewState.zoom });
-    }
+    } else restoredViewRef.current = null;
   }, [viewState]);
   useEffect(() => {
     if (previousGeographyRef.current === geography) return;
