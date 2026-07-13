@@ -555,11 +555,11 @@ def _main(argv: list[str] | None = None) -> int:
         if output and (ROOT / "public/data") in output.resolve().parents:
             raise RuntimeError("Report output cannot target public/data")
 
-    recorded_retrieval = "2026-06-24T00:00:00+00:00" if args.offline else None
+    recorded_retrieval = "2026-06-25T00:00:00+00:00" if args.offline else None
 
     public_before = digest(PUBLIC_RELEASE.read_bytes())
     eia_raw, eia_suffix, eia_method = acquire(args.eia_file, EIA_URL, FIXTURES / "eia860m-may-2026.json", args.offline)
-    eia_meta = source_meta("eia-860m", "2026-05", EIA_URL, "2026-06-24", "2026-05", eia_method, "U.S. federal government public-domain data", [], ["Operating", "Planned", "Retired", "Canceled or Postponed"], "monthly", ["Preliminary inventory; later monthly files may correct values without a specific notice."], ["Plants with at least 1 MW combined nameplate capacity.", "Does not establish production, financing, or survey-grade coordinates."], recorded_retrieval)
+    eia_meta = source_meta("eia-860m", "2026-05", EIA_URL, "2026-06-25", "2026-05", eia_method, "U.S. federal government public-domain data", [], ["Operating", "Planned", "Retired", "Canceled or Postponed"], "monthly", ["Preliminary inventory; later monthly files may correct values without a specific notice."], ["Plants with at least 1 MW combined nameplate capacity.", "Does not establish production, financing, or survey-grade coordinates."], recorded_retrieval)
     eia_meta["checksum"] = digest(eia_raw)
     eia = normalize_eia(eia_raw, eia_suffix, eia_meta)
 

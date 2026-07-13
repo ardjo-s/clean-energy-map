@@ -1,19 +1,30 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { parseArgs } from "node:util";
 import { atlasDatasetSchema } from "../lib/domain/schemas";
 import { validateBrowserDatasetIntegrity, validateDatasetIntegrity, validateReleasePairIntegrity } from "../lib/atlas/integrity";
 
 async function main() {
-  const publicPath = path.join(process.cwd(), "public", "data", "atlas-v1.json");
-  const fullPath = path.join(process.cwd(), "public", "data", "downloads", "atlas-v1-full.json");
-  const compact = atlasDatasetSchema.parse(JSON.parse(await readFile(publicPath, "utf8")));
+  const { values } = parseArgs({
+    options: {
+      compact: { type: "string" },
+      full: { type: "string" },
+    },
+  });
+  const publicPath = values.compact ?? path.join(process.cwd(), "public", "data", "atlas-v1.json");
+  const fullPath = values.full ?? path.join(process.cwd(), "public", "data", "downloads", "atlas-v1-full.json");
+  const compactBytes = await readFile(publicPath);
+  const compact = atlasDatasetSchema.parse(JSON.parse(compactBytes.toString("utf8")));
   const full = atlasDatasetSchema.parse(JSON.parse(await readFile(fullPath, "utf8")));
   const issues = [
     ...validateDatasetIntegrity(full),
-    ...validateDatasetIntegrity(compact),
     ...validateBrowserDatasetIntegrity(compact),
     ...validateReleasePairIntegrity(compact, full),
   ];
+  const maximumCompactBytes = 32 * 1024 * 1024;
+  if (compactBytes.byteLength > maximumCompactBytes) {
+    issues.push({ code: "compact_payload_budget_exceeded", message: `Compact browser release is ${compactBytes.byteLength} bytes; maximum is ${maximumCompactBytes}.` });
+  }
   if (issues.length) {
     console.error(issues.map((issue) => `${issue.code}${issue.entityId ? ` [${issue.entityId}]` : ""}: ${issue.message}`).join("\n"));
     process.exit(1);

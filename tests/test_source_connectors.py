@@ -325,6 +325,25 @@ class ConnectorTests(unittest.TestCase):
                 ingest.activate_staged(staged, destinations)
             self.assertEqual([item.read_text() for item in destinations], ["old-0", "old-1", "old-2"])
 
+    def test_release_candidate_validation_uses_exact_staged_paths(self) -> None:
+        compact = Path("/tmp/staged-compact.json")
+        full = Path("/tmp/staged-full.json")
+        with mock.patch.object(ingest.shutil, "which", return_value="/usr/bin/npm"), mock.patch.object(ingest.subprocess, "run") as run:
+            ingest.validate_staged(compact, full)
+        run.assert_called_once_with(
+            ["/usr/bin/npm", "run", "verify:data", "--", "--compact", str(compact), "--full", str(full)],
+            cwd=ingest.ROOT,
+            check=True,
+        )
+
+    def test_failed_candidate_validation_cannot_replace_public_release(self) -> None:
+        destinations = (ingest.RAW_ROWS, ingest.RAW_OWNERSHIP_ROWS, ingest.FULL_OUTPUT, ingest.OUTPUT)
+        before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in destinations}
+        with mock.patch.object(ingest, "validate_staged", side_effect=RuntimeError("invalid candidate")), self.assertRaisesRegex(RuntimeError, "invalid candidate"):
+            ingest.main(["--activate"])
+        after = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in destinations}
+        self.assertEqual(after, before)
+
 
 if __name__ == "__main__":
     unittest.main()
