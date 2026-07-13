@@ -10,6 +10,7 @@ async function main() {
   const full = atlasDatasetSchema.parse(JSON.parse(await readFile(fullPath, "utf8")));
   const issues = [
     ...validateDatasetIntegrity(full),
+    ...validateDatasetIntegrity(compact),
     ...validateBrowserDatasetIntegrity(compact),
     ...validateReleasePairIntegrity(compact, full),
   ];
