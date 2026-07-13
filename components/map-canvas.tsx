@@ -16,6 +16,7 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
   const facilitiesRef = useRef(facilities);
   const facilitiesVisibleRef = useRef(facilitiesVisible);
   const selectedIdRef = useRef(selectedId);
+  const restoredViewRef = useRef<MapViewState | null>(null);
   const initialViewRef = useRef(viewState ?? WORLD_VIEW);
   const previousGeographyRef = useRef(viewState ? geography : "");
   const applySelection = (map: Map) => {
@@ -40,6 +41,12 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     map.on("moveend", () => {
       const center = map.getCenter();
+      const restoredView = restoredViewRef.current;
+      if (restoredView) {
+        const restored = Math.abs(center.lng - restoredView.longitude) <= 0.0001 && Math.abs(center.lat - restoredView.latitude) <= 0.0001 && Math.abs(map.getZoom() - restoredView.zoom) <= 0.01;
+        if (restored) restoredViewRef.current = null;
+        return;
+      }
       onViewStateRef.current({ longitude: center.lng, latitude: center.lat, zoom: map.getZoom() });
     });
     map.on("load", () => {
@@ -87,6 +94,7 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
     if (!map || !viewState) return;
     const center = map.getCenter();
     if (Math.abs(center.lng - viewState.longitude) > 0.0001 || Math.abs(center.lat - viewState.latitude) > 0.0001 || Math.abs(map.getZoom() - viewState.zoom) > 0.01) {
+      restoredViewRef.current = viewState;
       map.stop();
       map.jumpTo({ center: [viewState.longitude, viewState.latitude], zoom: viewState.zoom });
     }
