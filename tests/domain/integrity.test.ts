@@ -10,147 +10,144 @@ function release(name: "atlas-v1.json" | "downloads/atlas-v1-full.json") {
   );
 }
 
+const compactRelease = release("atlas-v1.json");
+const fullRelease = release("downloads/atlas-v1-full.json");
+const compact = () => structuredClone(compactRelease);
+const full = () => structuredClone(fullRelease);
+
 describe("release integrity", () => {
   test("the current full release has coordinate observations matching every plotted point", () => {
-    const full = release("downloads/atlas-v1-full.json");
-    expect(validateDatasetIntegrity(full).filter((issue) => issue.code === "coordinate_evidence_mismatch")).toEqual([]);
+    const dataset = full();
+    expect(validateDatasetIntegrity(dataset).filter((issue) => issue.code === "coordinate_evidence_mismatch")).toEqual([]);
 
-    const plotted = full.facilities.find((facility) => facility.location.geometryType === "point");
+    const plotted = dataset.facilities.find((facility) => facility.location.geometryType === "point");
     expect(plotted?.location.geometryType).toBe("point");
     if (!plotted || plotted.location.geometryType !== "point") return;
     plotted.location.coordinates[0] += 0.001;
-    expect(validateDatasetIntegrity(full)).toContainEqual(
+    expect(validateDatasetIntegrity(dataset)).toContainEqual(
       expect.objectContaining({ code: "coordinate_evidence_mismatch", entityId: plotted.id }),
     );
   });
 
   test("compact release is self-contained and matches canonical full projections", () => {
-    const compact = release("atlas-v1.json");
-    const full = release("downloads/atlas-v1-full.json");
-    expect(validateBrowserDatasetIntegrity(compact)).toEqual([]);
-    expect(validateDatasetIntegrity(compact)).toEqual([]);
-    expect(validateReleasePairIntegrity(compact, full)).toEqual([]);
-    compact.projects.splice(compact.projects.findIndex((item) => item.id === compact.facilities[0].projectId), 1);
-    expect(validateBrowserDatasetIntegrity(compact)).toContainEqual(
+    const browser = compact();
+    expect(validateBrowserDatasetIntegrity(browser)).toEqual([]);
+    expect(validateDatasetIntegrity(browser)).toEqual([]);
+    expect(validateReleasePairIntegrity(browser, fullRelease)).toEqual([]);
+    browser.projects.splice(browser.projects.findIndex((item) => item.id === browser.facilities[0].projectId), 1);
+    expect(validateBrowserDatasetIntegrity(browser)).toContainEqual(
       expect.objectContaining({ code: "browser_facility_missing_project" }),
     );
   });
 
   test("browser integrity rejects a missing phase and its evidence", () => {
-    const compact = release("atlas-v1.json");
-    const phase = compact.phases.shift();
+    const browser = compact();
+    const phase = browser.phases.shift();
     expect(phase).toBeDefined();
-    expect(validateBrowserDatasetIntegrity(compact)).toContainEqual(
+    expect(validateBrowserDatasetIntegrity(browser)).toContainEqual(
       expect.objectContaining({ code: "browser_facility_missing_phase" }),
     );
     if (!phase) return;
-    compact.phases.unshift(phase);
-    compact.observations.splice(compact.observations.findIndex((item) => item.id === phase.sourceObservationIds[0]), 1);
-    expect(validateBrowserDatasetIntegrity(compact)).toContainEqual(
+    browser.phases.unshift(phase);
+    browser.observations.splice(browser.observations.findIndex((item) => item.id === phase.sourceObservationIds[0]), 1);
+    expect(validateBrowserDatasetIntegrity(browser)).toContainEqual(
       expect.objectContaining({ code: "browser_phase_missing_observation", entityId: phase.id }),
     );
   });
 
   test("pair verification detects shared public-value drift", () => {
-    const compact = release("atlas-v1.json");
-    const full = release("downloads/atlas-v1-full.json");
-    compact.facilities[0].officialName = "Changed only in compact";
-    expect(validateReleasePairIntegrity(compact, full)).toContainEqual(
-      expect.objectContaining({ code: "compact_facility_mismatch", entityId: compact.facilities[0].id }),
+    const browser = compact();
+    browser.facilities[0].officialName = "Changed only in compact";
+    browser.countryIndicators[0].value += 1;
+    browser.calculations[0].result += 1;
+    const issues = validateReleasePairIntegrity(browser, fullRelease);
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "compact_facility_mismatch", entityId: browser.facilities[0].id }),
     );
-
-    const indicatorCompact = release("atlas-v1.json");
-    indicatorCompact.countryIndicators[0].value += 1;
-    expect(validateReleasePairIntegrity(indicatorCompact, full)).toContainEqual(
-      expect.objectContaining({ code: "compact_indicator_mismatch", entityId: indicatorCompact.countryIndicators[0].id }),
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "compact_indicator_mismatch", entityId: browser.countryIndicators[0].id }),
     );
-
-    const calculationCompact = release("atlas-v1.json");
-    calculationCompact.calculations[0].result += 1;
-    expect(validateReleasePairIntegrity(calculationCompact, full)).toContainEqual(
-      expect.objectContaining({ code: "compact_calculation_mismatch", entityId: calculationCompact.calculations[0].id }),
+    expect(issues).toContainEqual(
+      expect.objectContaining({ code: "compact_calculation_mismatch", entityId: browser.calculations[0].id }),
     );
   });
 
   test("pair verification ignores collection order but validates exact compact transforms", () => {
-    const compact = release("atlas-v1.json");
-    const full = release("downloads/atlas-v1-full.json");
-    compact.projects.reverse();
-    compact.phases.reverse();
-    expect(validateReleasePairIntegrity(compact, full)).toEqual([]);
-    compact.facilities[0].limitations = ["Arbitrary compact limitation"];
-    expect(validateReleasePairIntegrity(compact, full)).toContainEqual(
-      expect.objectContaining({ code: "compact_facility_mismatch", entityId: compact.facilities[0].id }),
+    const browser = compact();
+    browser.projects.reverse();
+    browser.phases.reverse();
+    expect(validateReleasePairIntegrity(browser, fullRelease)).toEqual([]);
+    browser.facilities[0].limitations = ["Arbitrary compact limitation"];
+    expect(validateReleasePairIntegrity(browser, fullRelease)).toContainEqual(
+      expect.objectContaining({ code: "compact_facility_mismatch", entityId: browser.facilities[0].id }),
     );
   });
 
   test("pair verification covers release metadata, pointers, shared observations, and duplicates", () => {
-    const full = release("downloads/atlas-v1-full.json");
+    const canonicalFull = fullRelease;
 
-    const metadataCompact = release("atlas-v1.json");
+    const metadataCompact = compact();
     metadataCompact.release.changeSummary = "Drifted summary";
-    expect(validateReleasePairIntegrity(metadataCompact, full)).toContainEqual(
+    expect(validateReleasePairIntegrity(metadataCompact, canonicalFull)).toContainEqual(
       expect.objectContaining({ code: "compact_release_mismatch" }),
     );
 
-    const pointerCompact = release("atlas-v1.json");
+    const pointerCompact = compact();
     const pointer = pointerCompact.observations.find((item) => item.id.startsWith("compact-"));
     expect(pointer).toBeDefined();
     if (!pointer) return;
     pointer.rawValue = "wrong-source";
-    expect(validateReleasePairIntegrity(pointerCompact, full)).toContainEqual(
+    expect(validateReleasePairIntegrity(pointerCompact, canonicalFull)).toContainEqual(
       expect.objectContaining({ code: "compact_source_pointer_mismatch", entityId: pointer.id }),
     );
 
-    const observationCompact = release("atlas-v1.json");
+    const observationCompact = compact();
     const shared = observationCompact.observations.find((item) => !item.id.startsWith("compact-"));
     expect(shared).toBeDefined();
     if (!shared) return;
     shared.normalizedValue = "drifted";
-    expect(validateReleasePairIntegrity(observationCompact, full)).toContainEqual(
+    expect(validateReleasePairIntegrity(observationCompact, canonicalFull)).toContainEqual(
       expect.objectContaining({ code: "compact_observation_mismatch", entityId: shared.id }),
     );
 
-    const duplicateCompact = release("atlas-v1.json");
+    const duplicateCompact = compact();
     duplicateCompact.projects.push(duplicateCompact.projects[0]);
-    expect(validateReleasePairIntegrity(duplicateCompact, full)).toContainEqual(
+    expect(validateReleasePairIntegrity(duplicateCompact, canonicalFull)).toContainEqual(
       expect.objectContaining({ code: "duplicate_compact_project_id", entityId: duplicateCompact.projects[0].id }),
     );
   }, 15_000);
 
   test("pair verification reports every missing canonical collection", () => {
-    const compact = release("atlas-v1.json");
-    const full = release("downloads/atlas-v1-full.json");
+    const browser = compact();
     const collections: Array<[string, Array<unknown>]> = [
-      ["methodology", compact.methodologyReleases],
-      ["geography", compact.geographies],
-      ["source", compact.sources],
-      ["organization", compact.organizations],
-      ["project", compact.projects],
-      ["phase", compact.phases],
-      ["ownership", compact.ownership],
-      ["lifecycle", compact.lifecycleEvidence],
-      ["indicator", compact.countryIndicators],
-      ["calculation", compact.calculations],
-      ["coverage", compact.coverage],
+      ["methodology", browser.methodologyReleases],
+      ["geography", browser.geographies],
+      ["source", browser.sources],
+      ["organization", browser.organizations],
+      ["project", browser.projects],
+      ["phase", browser.phases],
+      ["ownership", browser.ownership],
+      ["lifecycle", browser.lifecycleEvidence],
+      ["indicator", browser.countryIndicators],
+      ["calculation", browser.calculations],
+      ["coverage", browser.coverage],
     ];
-    for (const [name, collection] of collections) {
-      const removed = collection.shift();
-      expect(removed).toBeDefined();
-      expect(validateReleasePairIntegrity(compact, full).some((issue) => issue.code === `compact_${name}_missing`)).toBe(true);
-      collection.unshift(removed);
+    for (const [, collection] of collections) {
+      const item = collection.shift();
+      expect(item).toBeDefined();
     }
+    const issues = validateReleasePairIntegrity(browser, fullRelease);
+    for (const [name] of collections) expect(issues.some((issue) => issue.code === `compact_${name}_missing`)).toBe(true);
   }, 20_000);
 
   test("sources require an immutable snapshot identity", () => {
-    const source = release("downloads/atlas-v1-full.json").sources[0];
+    const source = fullRelease.sources[0];
     expect(sourceSchema.safeParse({ ...source, snapshotSha256: null }).success).toBe(false);
     expect(sourceSchema.safeParse({ ...source, snapshotPath: null }).success).toBe(false);
   });
 
   test("legacy releases receive explicit contract versions at the parse boundary", () => {
-    const compact = release("atlas-v1.json");
-    expect(compact.release.schemaVersions).toEqual({
+    expect(compactRelease.release.schemaVersions).toEqual({
       dataset: "atlas-dataset-v1",
       source: "source-v1",
       observation: "observation-v1",
