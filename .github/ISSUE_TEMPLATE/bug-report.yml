@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible application problem.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials or private data. Report vulnerabilities through the private security link.
+  - type: input
+    id: url
+    attributes:
+      label: Atlas URL
+      description: Include the full public URL when the state is encoded in it.
+      placeholder: https://clean-energy-map.vercel.app/?...
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed and expected behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. Open ...\n2. Select ...\n3. Observe ..."
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Safari 20 on macOS 27, or commit SHA
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: This report contains no credential, private data, or undisclosed vulnerability.
+          required: true
