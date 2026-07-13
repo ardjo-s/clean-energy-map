@@ -1,7 +1,7 @@
 ---
 title: Fix compact and full release integrity
 type: fix
-status: active
+status: completed
 date: 2026-07-13
 origin: docs/brainstorms/2026-07-12-verifiable-clean-energy-atlas-requirements.md
 ---
