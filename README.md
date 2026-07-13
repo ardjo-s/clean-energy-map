@@ -10,7 +10,7 @@ Source-backed map of U.S. clean-energy infrastructure, generation, planned proje
 
 ## Current release
 
-Dataset `2024.4` contains:
+Dataset `2024.5` contains:
 
 - 12,411 facility-technology records, including 12,409 with source-backed locations;
 - 11,775 projects and 17,449 generator phases;

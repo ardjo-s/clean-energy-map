@@ -298,7 +298,7 @@ Do not optimize this loop for record count. A new source that improves provenanc
 
 ## Publication decision
 
-The machine-readable `publicationStatus` is `verified_wave`, `candidate`, or `withheld`. Only `verified_wave` can represent a passed national baseline. Release 2024.2 publishes the United States as the sole verified wave; every other target cell is withheld until its own evidence gate passes.
+The machine-readable `publicationStatus` is `verified_wave`, `candidate`, or `withheld`. Only `verified_wave` can represent a passed national baseline. The current V1 release publishes the United States as the sole verified wave; every other target cell is withheld until its own evidence gate passes.
 
 The release steward records `PASS`, `PARTIAL`, or `WITHHOLD` for every gate with evidence links. Any `FAIL`, missing evidence, or unresolved material risk prevents `verified wave` status.
 

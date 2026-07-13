@@ -2,7 +2,7 @@
 
 Status: normative index  
 Current product stage: V1 — Verifiable Atlas  
-Last reviewed: 2026-07-12
+Last reviewed: 2026-07-13
 
 ## Purpose
 
@@ -43,6 +43,7 @@ The words **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 | [Verification and Provenance Contract](verification-and-provenance-contract.md) | Source policy, raw observations, normalized facts, field lineage, calculations, versioning, corrections, licensing | Clean-energy policy decisions, wave prioritization |
 | [Future-Financing Compatibility Constraints](future-financing-compatibility.md) | V1 structural foundations, deferred finance model, future anti-greenwashing and capital-guidance safeguards | V1 finance UI; no finance UI is allowed in V1 |
 | [Verified-Wave Publication Criteria](verified-wave-publication-criteria.md) | Coverage vocabulary, national-baseline gates, wave selection, release artifacts, V1 quality gates | Energy classification or source-lineage definitions |
+| [V1 Performance Budget](performance-budget.md) | Browser payload ceiling, interaction budgets, measurement method, current production-build baseline | Data correctness or source publication gates |
 
 ## Current release boundary
 
@@ -77,7 +78,7 @@ Status describes the checked-in V1 implementation, not future coverage. `npm run
 | R11 distinct country indicators | Complete | `indicatorTypeSchema`, calculation arithmetic | `npm run test && npm run verify:data` | No metric is substituted for another. |
 | R12 trace from claim to source | Complete | immutable source snapshots, observations, calculations, evidence drawer | `npm run test && npm run verify:data` | Redistribution restrictions may limit raw downloads. |
 | R13 versioned methods, data, history, limitations | Complete | release schemas, change history, corrections URL | `npm run verify:data` | Legacy 2024.2 files receive V1 contract defaults when parsed. |
-| R14 unplotted uncertain locations | Complete | discriminated location schema and coordinate-evidence integrity | `npm run test && npm run verify:data` | One current record is intentionally unplotted. |
+| R14 unplotted uncertain locations | Complete | discriminated location schema and coordinate-evidence integrity | `npm run test && npm run verify:data` | Two current records are intentionally unplotted. |
 | R15 visible conflicts and uncertainty | Complete | confidence, conflict groups, limitations, connector reports | `npm run test:connectors && npm run test:e2e` | Absence of a conflict is not evidence of exhaustive matching. |
 | R16 finance-ready entities and histories | Complete | project, phase, organization and ownership schemas | `npm run verify:data` | Financing transactions are not modeled in V1. |
 | R17 no V1 finance-facing behavior | Complete | V1 routes and components; future-financing interface boundary | `npm run test:e2e` | No advice, ranking, funding or money movement. |

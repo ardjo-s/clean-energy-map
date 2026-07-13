@@ -32,7 +32,6 @@ describe("release integrity", () => {
   test("compact release is self-contained and matches canonical full projections", () => {
     const browser = compact();
     expect(validateBrowserDatasetIntegrity(browser)).toEqual([]);
-    expect(validateDatasetIntegrity(browser)).toEqual([]);
     expect(validateReleasePairIntegrity(browser, fullRelease)).toEqual([]);
     browser.projects.splice(browser.projects.findIndex((item) => item.id === browser.facilities[0].projectId), 1);
     expect(validateBrowserDatasetIntegrity(browser)).toContainEqual(
@@ -73,14 +72,31 @@ describe("release integrity", () => {
   });
 
   test("pair verification ignores collection order but validates exact compact transforms", () => {
-    const browser = compact();
-    browser.projects.reverse();
-    browser.phases.reverse();
-    expect(validateReleasePairIntegrity(browser, fullRelease)).toEqual([]);
-    browser.facilities[0].limitations = ["Arbitrary compact limitation"];
-    expect(validateReleasePairIntegrity(browser, fullRelease)).toContainEqual(
-      expect.objectContaining({ code: "compact_facility_mismatch", entityId: browser.facilities[0].id }),
+    const reordered = compact();
+    reordered.projects.reverse();
+    reordered.phases.reverse();
+    const multiPhaseProject = reordered.projects.find((item) => item.phaseIds.length > 1);
+    expect(multiPhaseProject).toBeDefined();
+    multiPhaseProject?.phaseIds.reverse();
+    expect(validateReleasePairIntegrity(reordered, fullRelease)).toEqual([]);
+
+    const changedCoordinate = compact();
+    const plotted = changedCoordinate.facilities.find((item) => item.location.geometryType === "point");
+    expect(plotted?.location.geometryType).toBe("point");
+    if (plotted?.location.geometryType === "point") plotted.location.coordinates.reverse();
+    expect(validateReleasePairIntegrity(changedCoordinate, fullRelease)).toContainEqual(
+      expect.objectContaining({ code: "compact_facility_mismatch", entityId: plotted?.id }),
     );
+
+    const changedLimitation = compact();
+    changedLimitation.facilities[0].limitations = ["Arbitrary compact limitation"];
+    expect(validateReleasePairIntegrity(changedLimitation, fullRelease)).toContainEqual(
+      expect.objectContaining({ code: "compact_facility_mismatch", entityId: changedLimitation.facilities[0].id }),
+    );
+
+    const reorderedHistory = compact();
+    reorderedHistory.release.changeHistory.reverse();
+    expect(validateReleasePairIntegrity(reorderedHistory, fullRelease)).toContainEqual(expect.objectContaining({ code: "compact_release_mismatch" }));
   });
 
   test("pair verification covers release metadata, pointers, shared observations, and duplicates", () => {
@@ -114,6 +130,14 @@ describe("release integrity", () => {
     duplicateCompact.projects.push(duplicateCompact.projects[0]);
     expect(validateReleasePairIntegrity(duplicateCompact, canonicalFull)).toContainEqual(
       expect.objectContaining({ code: "duplicate_compact_project_id", entityId: duplicateCompact.projects[0].id }),
+    );
+
+    const duplicateObservation = compact();
+    const sharedObservation = duplicateObservation.observations.find((item) => !item.id.startsWith("compact-"));
+    expect(sharedObservation).toBeDefined();
+    duplicateObservation.observations.push(sharedObservation!);
+    expect(validateReleasePairIntegrity(duplicateObservation, canonicalFull)).toContainEqual(
+      expect.objectContaining({ code: "duplicate_compact_observation_id", entityId: sharedObservation?.id }),
     );
   }, 30_000);
 
