@@ -29,6 +29,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "measure:performance": "tsx scripts/measure-performance.ts",
     "ingest:data": "python3 scripts/ingest_eia860.py",
     "connectors:offline": "python3 scripts/run_source_connectors.py --offline --dry-run",
     "test:connectors": "python3 -m unittest tests/test_source_connectors.py",

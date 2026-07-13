@@ -329,7 +329,7 @@ A source publication date, access date, observation date, calculation time, and 
 
 ## Minimum audit invariant
 
-Release 2024.2 keeps calculation input observations and sourced ownership assertions in the browser dataset. The full download remains authoritative for every facility field, project, and phase observation. Compact records link to that full release instead of silently presenting their source pointers as complete field evidence.
+The compact V1 browser release keeps calculation input observations and sourced ownership assertions in the browser dataset. The full download remains authoritative for every facility field, project, and phase observation. Compact records link to the exact matching full release instead of silently presenting their source pointers as complete field evidence.
 
 For any public facility fact, country percentage, aggregate, classification, geometry, ownership assertion, or coverage claim, the system MUST answer:
 

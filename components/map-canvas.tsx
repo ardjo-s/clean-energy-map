@@ -93,6 +93,7 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
   useEffect(() => {
     if (previousGeographyRef.current === geography) return;
     previousGeographyRef.current = geography;
+    if (viewState) return;
     const map = mapRef.current;
     if (!map) return;
     const fit = () => {
@@ -106,7 +107,7 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
       map.fitBounds(bounds, { padding: 70, maxZoom: 6, duration: 500 });
     };
     if (map.loaded()) fit(); else map.once("load", fit);
-  }, [facilities, geography]);
+  }, [facilities, geography, viewState]);
   useEffect(() => {
     selectedIdRef.current = selectedId;
     const map = mapRef.current;

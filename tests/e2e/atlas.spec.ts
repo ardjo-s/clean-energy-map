@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const sourceBackedFacility = { id: "us-eia-1-onshore_wind", officialName: "Sand Point" } as const;
 
@@ -87,6 +88,21 @@ test("map view state is shareable and the facilities layer is real", async ({ pa
   await expect(page).toHaveURL(/lng=/);
 });
 
+test("back navigation restores the exact geography map view", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "Desktop-only map history assertion.");
+  await page.goto("/?geography=US&lng=-101.12345&lat=38.54321&zoom=4.25");
+  await page.getByLabel("Geography").selectOption("WORLD");
+  await expect(page).not.toHaveURL(/geography=US/);
+  await page.goBack();
+  await expect(page.getByLabel("Geography")).toHaveValue("US");
+  await expect(page).toHaveURL(/geography=US/);
+  await expect(page).toHaveURL(/lng=-101\.12345/);
+  await expect(page).toHaveURL(/lat=38\.54321/);
+  await expect(page).toHaveURL(/zoom=4\.25/);
+  await page.waitForTimeout(750);
+  await expect(page).toHaveURL(/lng=-101\.12345&lat=38\.54321&zoom=4\.25/);
+});
+
 test("desktop primary navigation is keyboard reachable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "Desktop header layout.");
   await page.goto("/");
@@ -134,5 +150,18 @@ test("filtered capacity aggregates expose observation lineage", async ({ page },
   await expect(page.getByRole("button", { name: "Download calculation lineage" })).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download calculation lineage" }).click();
-  expect((await download).suggestedFilename()).toBe("filtered-capacity-lineage.json");
+  const completed = await download;
+  expect(completed.suggestedFilename()).toBe("filtered-capacity-lineage.json");
+  const path = await completed.path();
+  expect(path).not.toBeNull();
+  const payload = JSON.parse(await readFile(path!, "utf8"));
+  expect(payload.contractVersion).toBe("filtered-capacity-lineage-v1");
+  expect(payload.scope.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(payload.calculations[0]).toMatchObject({
+    formulaVersion: "filtered-installed-capacity-v1",
+    softwareVersion: "atlas-filtered-capacity-1.0.0",
+  });
+  expect(payload.calculations[0].inputObservationIds.length).toBeGreaterThan(0);
+  expect(payload.observations.length).toBeGreaterThan(0);
+  expect(payload.sources[0].url).toMatch(/^https:\/\//);
 });

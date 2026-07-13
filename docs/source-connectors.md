@@ -44,6 +44,8 @@ npm run verify
 npm run test:e2e
 ```
 
+The canonical verifier caps the compact browser release at 32 MiB. Exact field-level observations remain in the full evidence release. The browser fetches and validates that full release only when a user requests filtered-capacity lineage, and rejects it if the release or build identifier differs from the displayed compact release.
+
 Refresh the two minimal official USGS API snapshots used for exact-ID spatial enrichment:
 
 ```sh

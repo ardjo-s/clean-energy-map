@@ -9,9 +9,11 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -35,7 +37,7 @@ RAW_ROWS = ROOT / "public/data/downloads/eia860-relevant-generators.jsonl"
 RAW_OWNERSHIP_ROWS = ROOT / "public/data/downloads/eia860-relevant-ownership.jsonl"
 RETRIEVED_AT = "2026-07-13T00:00:00Z"
 METHOD_VERSION = "1.1.0"
-DATASET_VERSION = "2024.4"
+DATASET_VERSION = "2024.5"
 CORRECTIONS_URL = "https://github.com/ardjo-s/clean-energy-map/issues/new?labels=data-correction"
 EXPECTED_EIA_SHA256 = "0aaae04812cd4ab87a3e346bdf93848a3cc15053fd4dc2a4cf82d2aeac95f12b"
 EXPECTED_EIA923_SHA256 = "272055f2d748f6486fc3076abd5a40ec736dbff45458bdb4c895761278c50f2b"
@@ -428,7 +430,7 @@ def build() -> dict[str, Any]:
     sources = [
         source("src-eia-860-2024", "U.S. Energy Information Administration", "Form EIA-860 detailed data, final 2024", "https://www.eia.gov/electricity/data/eia860/", "government", "2025-09-09", "U.S. federal government public-domain data; acknowledgement requested.", "U.S. electric power plants with at least 1 MW combined nameplate capacity.", EIA_ZIP),
         source("src-eia-923-2024", "U.S. Energy Information Administration", "Form EIA-923 detailed data, final 2024 revised release", "https://www.eia.gov/electricity/data/eia923/", "government", "2026-01-12", "U.S. federal government public-domain data; acknowledgement requested.", "Final 2024 U.S. plant and prime-mover electricity generation and fuel consumption.", EIA923_ZIP),
-        source("src-eia-860m-2026-05", "U.S. Energy Information Administration", "Form EIA-860M preliminary monthly generator inventory, May 2026", "https://www.eia.gov/electricity/data/eia860m/", "government", "2026-06-24", "U.S. federal government public-domain data; acknowledgement requested.", "Preliminary May 2026 inventory of planned U.S. generators; kept distinct from final annual EIA-860 observations.", EIA860M_XLSX),
+        source("src-eia-860m-2026-05", "U.S. Energy Information Administration", "Form EIA-860M preliminary monthly generator inventory, May 2026", "https://www.eia.gov/electricity/data/eia860m/", "government", "2026-06-25", "U.S. federal government public-domain data; acknowledgement requested.", "Preliminary May 2026 inventory of planned U.S. generators; kept distinct from final annual EIA-860 observations.", EIA860M_XLSX),
         source("src-eia-861m-small-solar-2024", "U.S. Energy Information Administration", "Form EIA-861M final small-scale solar capacity and generation, December 2024", "https://www.eia.gov/electricity/data/eia861m/", "government", "2025-10-27", "U.S. federal government public-domain data; acknowledgement requested.", "Final state and U.S. aggregate estimates for solar PV systems below 1 MW; never plotted as facilities.", EIA861M_SOLAR_XLSX),
         source("src-eia-861m-non-net-2024", "U.S. Energy Information Administration", "Form EIA-861M final non-net-metered distributed generator inventory, December 2024", "https://www.eia.gov/electricity/data/eia861m/", "government", "2025-10-27", "U.S. federal government public-domain data; acknowledgement requested.", "Final utility and state-adjustment aggregates for non-net-metered generators below 1 MW; never plotted as facilities.", EIA861M_NON_NET_XLSX),
         source("src-usgs-uspvdb-4.0", "U.S. Geological Survey / Lawrence Berkeley National Laboratory", "United States Large-Scale Solar Photovoltaic Database, version 4.0", "https://energy.usgs.gov/uspvdb/data/", "government", "2026-04-01", "U.S. government data; review the official USPVDB citation and third-party notices.", "U.S. large-scale solar project centroids linked only through exact published EIA plant IDs.", USPVDB_JSON),
@@ -968,7 +970,7 @@ def build() -> dict[str, Any]:
     for technology in sorted(set(ALL_TECHNOLOGIES) - published_us_technologies):
         coverage.append({
             "id": f"coverage-us-{technology}-withheld-2024", "geographyCode": "US", "technology": technology, "publicationStatus": "withheld", "status": "not_assessed",
-            "scope": "Target technology is not assessed in the U.S. 2024.2 verified electricity wave.",
+            "scope": f"Target technology is not assessed in the U.S. {DATASET_VERSION} verified electricity wave.",
             "measuredCoverage": None, "authoritativeBaseline": True, "facilitySourcesPresent": False, "reproducibleMethod": False,
             "visibleLimitations": ["No authoritative facility source for this technology passed the release gate.", "An empty layer means not assessed, not zero infrastructure."],
             "sourceIds": [], "assessedAt": RETRIEVED_AT,
@@ -978,7 +980,7 @@ def build() -> dict[str, Any]:
             continue
         base_limitations = [
             "No authoritative national energy baseline and facility-source set has passed the V1 publication gate.",
-            "No facilities are plotted for this target in release 2024.2; an empty map does not mean zero infrastructure.",
+            f"No facilities are plotted for this target in release {DATASET_VERSION}; an empty map does not mean zero infrastructure.",
         ]
         if geography_type == "ocean_area":
             base_limitations.append("Territorial waters, EEZ, high-seas, and disputed-area evidence must be sourced before national attribution.")
@@ -1016,12 +1018,13 @@ def build() -> dict[str, Any]:
                 "calculation": "calculation-v1",
             },
             "sourceSnapshotDates": {item["id"]: item["publicationDate"] or item["accessedAt"] for item in sources},
-            "changeSummary": "Adds final 2024 facility generation, preliminary May 2026 planned generators, distributed-capacity reconciliation, and exact-ID USGS solar/wind spatial enrichment.",
+            "changeSummary": "Corrects EIA-860M publication metadata, adds canonical filtered-capacity lineage, and reduces the browser evidence projection without changing public values.",
             "changeHistory": [
                 {"version": "2024.1", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Initial verified U.S. national electricity baseline and EIA-860 facility wave."},
                 {"version": "2024.2", "releasedAt": "2026-07-12T19:00:00Z", "summary": "Added withheld target coverage, explicit publication status, source-backed ownership, and stronger browser traceability."},
                 {"version": "2024.3", "releasedAt": "2026-07-13T00:00:00Z", "summary": "Made compact project and phase relationships self-contained and added strict compact/full drift verification."},
-                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Added final generation and operating dates, preliminary planned generators, distributed-capacity reconciliation, and exact-ID USGS solar/wind spatial enrichment."},
+                {"version": "2024.4", "releasedAt": "2026-07-13T00:00:00Z", "summary": "Added final generation and operating dates, preliminary planned generators, distributed-capacity reconciliation, and exact-ID USGS solar/wind spatial enrichment."},
+                {"version": DATASET_VERSION, "releasedAt": RETRIEVED_AT, "summary": "Corrected EIA-860M publication metadata and introduced a bounded browser evidence projection with on-demand exact calculation lineage."},
             ],
             "correctionsUrl": CORRECTIONS_URL,
             "limitations": coverage[0]["visibleLimitations"],
@@ -1076,6 +1079,18 @@ def activate_staged(staged: dict[Path, Path], order: tuple[Path, ...]) -> None:
                 backup.unlink(missing_ok=True)
 
 
+def validate_staged(compact: Path, full: Path) -> None:
+    """Run the canonical schema and integrity suite against exact staged bytes."""
+    npm = shutil.which("npm")
+    if npm is None:
+        raise RuntimeError("npm is required to validate a release candidate")
+    subprocess.run(
+        [npm, "run", "verify:data", "--", "--compact", str(compact), "--full", str(full)],
+        cwd=ROOT,
+        check=True,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--activate", action="store_true", help="Replace the checked-in public release after staging the complete candidate.")
@@ -1107,9 +1122,17 @@ def main(argv: list[str] | None = None) -> None:
             "conflictGroup": None,
             "reviewerNote": "Full field-level observations are in /data/downloads/atlas-v1-full.json.",
         })
+    observation_sources = {item["id"]: item["sourceId"] for item in data["observations"]}
+
+    def source_pointer_ids(observation_ids: list[str]) -> list[str]:
+        missing = [item for item in observation_ids if item not in observation_sources]
+        if missing:
+            raise RuntimeError(f"Cannot compact missing observations: {missing[:5]}")
+        return sorted({f"compact-{observation_sources[item]}" for item in observation_ids})
+
     compact_facilities = []
     for facility in data["facilities"]:
-        compact = dict(facility)
+        compact = deepcopy(facility)
         compact["sourceObservationIds"] = []
         if any(item["status"] == "installed" for item in facility["capacities"]):
             compact["sourceObservationIds"].append("compact-src-eia-860-2024")
@@ -1121,6 +1144,12 @@ def main(argv: list[str] | None = None) -> None:
             compact["sourceObservationIds"].append("compact-src-usgs-uspvdb-4.0")
         if "uswtdbTurbineCount" in compact["externalIdentifiers"]:
             compact["sourceObservationIds"].append("compact-src-usgs-uswtdb-9.0")
+        compact["location"]["evidenceObservationIds"] = source_pointer_ids(facility["location"]["evidenceObservationIds"])
+        compact["jurisdiction"]["evidenceObservationIds"] = source_pointer_ids(facility["jurisdiction"]["evidenceObservationIds"])
+        for compact_capacity, capacity in zip(compact["capacities"], facility["capacities"], strict=True):
+            compact_capacity["sourceObservationIds"] = source_pointer_ids(capacity["sourceObservationIds"])
+        if compact["annualGeneration"]:
+            compact["annualGeneration"]["sourceObservationIds"] = source_pointer_ids(facility["annualGeneration"]["sourceObservationIds"])
         compact["limitations"] = [facility["classificationReason"]]
         if compact["location"]["geometryType"] == "unplotted":
             compact["limitations"].append("No valid publisher-reported coordinate; the record is searchable but unplotted.")
@@ -1137,30 +1166,15 @@ def main(argv: list[str] | None = None) -> None:
         for relationship in data["ownership"]
         for observation_id in relationship["sourceObservationIds"]
     }
-    organization_observation_ids = {
-        observation_id
-        for organization in data["organizations"]
-        for observation_id in organization["sourceObservationIds"]
-    }
     project_ids = {facility["projectId"] for facility in compact_facilities}
     phase_ids = {phase_id for facility in compact_facilities for phase_id in facility["phaseIds"]}
-    compact_projects = [item for item in data["projects"] if item["id"] in project_ids]
-    compact_phases = [item for item in data["phases"] if item["id"] in phase_ids]
-    relationship_observation_ids = {
-        observation_id
-        for collection in (compact_projects, compact_phases)
-        for item in collection
-        for observation_id in item["sourceObservationIds"]
-    }
-    facility_observation_ids: set[str] = set()
-    for facility in compact_facilities:
-        facility_observation_ids.update(facility["location"]["evidenceObservationIds"])
-        facility_observation_ids.update(facility["jurisdiction"]["evidenceObservationIds"])
-        for capacity in facility["capacities"]:
-            facility_observation_ids.update(capacity["sourceObservationIds"])
-        if facility["annualGeneration"]:
-            facility_observation_ids.update(facility["annualGeneration"]["sourceObservationIds"])
-    required_observation_ids = calculation_observation_ids | ownership_observation_ids | organization_observation_ids | relationship_observation_ids | facility_observation_ids
+    compact_projects = [deepcopy(item) for item in data["projects"] if item["id"] in project_ids]
+    compact_phases = [deepcopy(item) for item in data["phases"] if item["id"] in phase_ids]
+    compact_organizations = deepcopy(data["organizations"])
+    for collection in (compact_projects, compact_phases, compact_organizations):
+        for item in collection:
+            item["sourceObservationIds"] = source_pointer_ids(item["sourceObservationIds"])
+    required_observation_ids = calculation_observation_ids | ownership_observation_ids
     browser_evidence = [
         item
         for item in data["observations"]
@@ -1171,6 +1185,7 @@ def main(argv: list[str] | None = None) -> None:
         "observations": source_pointers + browser_evidence,
         "projects": compact_projects,
         "phases": compact_phases,
+        "organizations": compact_organizations,
         "facilities": compact_facilities,
     }
     compact_encoded = json.dumps(compact_data, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
@@ -1194,14 +1209,15 @@ def main(argv: list[str] | None = None) -> None:
             with open(descriptor, "w", encoding="utf-8", closefd=True) as stream:
                 stream.write(content)
             staged[destination] = Path(name)
+        validate_staged(staged[OUTPUT], staged[FULL_OUTPUT])
         if args.activate:
             activate_staged(staged, (RAW_ROWS, RAW_OWNERSHIP_ROWS, FULL_OUTPUT, OUTPUT))
     finally:
         for path in staged.values():
             path.unlink(missing_ok=True)
     action = "Wrote" if args.activate else "Validated candidate for"
-    print(f"{action} {OUTPUT.relative_to(ROOT)} ({len(data['facilities']):,} facilities, {len(compact_encoded):,} bytes)")
-    print(f"{action} {FULL_OUTPUT.relative_to(ROOT)} ({len(full_encoded):,} bytes, complete evidence release)")
+    print(f"{action} {OUTPUT.relative_to(ROOT)} ({len(data['facilities']):,} facilities, {len(compact_encoded.encode('utf-8')):,} bytes)")
+    print(f"{action} {FULL_OUTPUT.relative_to(ROOT)} ({len(full_encoded.encode('utf-8')):,} bytes, complete evidence release)")
 
 
 if __name__ == "__main__":

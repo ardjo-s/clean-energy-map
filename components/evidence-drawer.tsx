@@ -5,7 +5,7 @@ import { ExternalLink, Search, X } from "lucide-react";
 import type { AtlasDataset } from "@/lib/domain/schemas";
 import type { DrawerPage } from "@/hooks/use-atlas-url";
 
-const repository = "https://github.com/ardjo-s/clean-energy-map/blob/agent/verifiable-atlas-v1";
+const repository = "https://github.com/ardjo-s/clean-energy-map/blob/main";
 
 export function EvidenceDrawer({ page, geography, data, onClose }: { page: DrawerPage | null; geography: string; data: AtlasDataset; onClose(): void }) {
   const [query, setQuery] = useState("");
