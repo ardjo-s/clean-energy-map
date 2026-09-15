@@ -41,6 +41,9 @@ export function MapCanvas({ facilities, selectedId, geography, viewState, facili
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-left");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
     map.on("moveend", () => {
+      // Ignore positioning before first load: the initial center (possibly the
+      // WORLD fallback from SSR hydration) must never overwrite the URL.
+      if (!map.loaded()) return;
       const center = map.getCenter();
       const restoredView = restoredViewRef.current;
       if (restoredView) {
