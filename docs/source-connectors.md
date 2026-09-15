@@ -22,12 +22,24 @@ Acquire the official EIA-860M workbook, accept an official GEM export downloaded
 
 ```sh
 EMBER_API_KEY='...' python3 scripts/run_source_connectors.py \
-  --gem-file /absolute/path/to/official-gipt-export.csv \
+  --gem-file /absolute/path/to/official-gipt-export.xlsx \
   --report-json data/connectors/reports/live.json \
   --report-md data/connectors/reports/live.md
 ```
 
 `EMBER_API_KEY` is read from the environment and is never stored in a snapshot, report, error, or committed file. The connector rejects any API response that echoes the credential. A local Ember response can instead be supplied with `--ember-file`. A local official EIA workbook can be supplied with `--eia-file`.
+
+The verified March 2026 GEM pilot can be reproduced locally without an Ember API key:
+
+```sh
+python3 scripts/run_source_connectors.py \
+  --gem-file /absolute/path/Global-Integrated-Power-March-2026-II.xlsx \
+  --ember-file data/connectors/fixtures/ember-us-2024.json \
+  --report-json data/connectors/reports/usa-pilot-2026-07-13.json \
+  --report-md data/connectors/reports/usa-pilot-2026-07-13.md
+```
+
+The reports and content-addressed snapshots are intentionally gitignored. They remain local evidence rather than bloating the browser release or bypassing the explicit publication gate.
 
 Run the connector contract tests:
 
@@ -79,9 +91,12 @@ The staging report reconciles Ember's 2024 total generation and nuclear-plus-win
 
 ## Current limits
 
-- The repository includes a schema-only GEM fixture because the official export requires GEM's download form. A real pilot needs an official manually downloaded export.
+- The official `Global-Integrated-Power-March-2026-II.xlsx` pilot completed with SHA-256 `18e14321cbc1f7a8f580417f4d1ec1176b78f9b61f19cfbfb9a3123c2d80f27b`. From 182,428 global rows, the published-technology US scope contains 12,369 records and 198,401 field observations.
+- GEM contributes 3,041 exact-name review candidates and 9,328 unmatched records. The export has no EIA plant or generator identifier columns, so it produces zero automatic matches or merges. The 4,480 candidate links remain reversible review evidence.
+- GEM provides 11,421 exact locations eligible for plotting. The 948 approximate locations remain unplotted. No GEM observation changes the public atlas without an explicit future activation gate.
+- The workbook states that it is the second March 2026 release but no exact publication day, so its freshness state remains `unknown` instead of using an invented date.
 - The offline connector fixture is a sourced subset of the May 2026 workbook. The release builder pins and checksums the full official planned-generator workbook.
-- The offline Ember fixture contains sourced US 2024 rows from Ember's official CC BY 4.0 bulk download. Live acquisition uses the official API and requires `EMBER_API_KEY`.
+- The Ember fixture contains sourced US 2024 rows from Ember's official CC BY 4.0 bulk download and preserves two EIA reconciliation conflicts. Live API acquisition still requires `EMBER_API_KEY`.
 - GEM and Ember do not change public facility rows or headline calculations without a future explicit activation command and review gate.
 
-The next smallest step is one manual official GEM export, followed by inspection of real header names and the first exact-identifier matching report. Ownership and GLEIF remain deferred until that matching report is stable.
+The next smallest step is a reviewed EIA-GEM crosswalk for the 3,041 exact-name candidates. Ownership and GLEIF remain deferred until that crosswalk is stable; finance remains V2.
