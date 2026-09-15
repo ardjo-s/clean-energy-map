@@ -1,9 +1,10 @@
 "use client";
 
 import { Filter, Globe2, Layers3, Search, X } from "lucide-react";
+import { useState } from "react";
 import { emptyFilters, type AtlasFilters, type FreshnessState, type LocationState } from "@/lib/atlas/query";
-import type { CapacityTotals } from "@/lib/atlas/calculations";
-import type { Classification, Confidence, EnergyRole, Facility, Geography, Technology } from "@/lib/domain/schemas";
+import { filteredCapacityLineage, type CapacityTotals } from "@/lib/atlas/calculations";
+import { atlasDatasetSchema, type AtlasDataset, type Classification, type Confidence, type EnergyRole, type Facility, type Geography, type Technology } from "@/lib/domain/schemas";
 
 const classifications: Classification[] = ["eligible", "conditional", "excluded", "unknown"];
 const lifecycle: Facility["lifecycleState"][] = ["operating", "under_construction", "approved", "permitted", "proposed", "suspended", "cancelled", "retired", "unknown"];
@@ -53,17 +54,17 @@ export function ControlPanel({ open, setOpen, filters, allFacilities, geography,
   </div>;
 }
 
-function downloadCapacityLineage(facilities: Facility[]) {
-  const observations = facilities.flatMap((facility) => facility.capacities
-    .filter((capacity) => capacity.status === "installed")
-    .map((capacity) => ({ facilityId: facility.id, kind: capacity.kind, value: capacity.value, sourceObservationIds: capacity.sourceObservationIds })));
-  const payload = {
-    formula: "sum installed capacity values by capacity kind",
-    period: "latest retained facility observations in this release",
-    exclusions: ["planned capacities", "retired capacities", "facilities excluded by the active filters"],
-    facilityIds: facilities.map((facility) => facility.id),
-    observations,
-  };
+async function downloadCapacityLineage(data: AtlasDataset, facilities: Facility[], geography: string, filters: AtlasFilters) {
+  const response = await fetch("/data/downloads/atlas-v1-full.json");
+  if (!response.ok) throw new Error(`Full evidence release unavailable (${response.status}).`);
+  const parsed = atlasDatasetSchema.safeParse(await response.json());
+  if (!parsed.success || parsed.data.release.id !== data.release.id || parsed.data.release.buildId !== data.release.buildId) {
+    throw new Error("Full evidence release does not match the browser release.");
+  }
+  const facilityIds = new Set(facilities.map((facility) => facility.id));
+  const fullFacilities = parsed.data.facilities.filter((facility) => facilityIds.has(facility.id));
+  if (fullFacilities.length !== facilityIds.size) throw new Error("Full evidence release is missing selected facilities.");
+  const payload = await filteredCapacityLineage(parsed.data, fullFacilities, geography, filters);
   const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -72,7 +73,14 @@ function downloadCapacityLineage(facilities: Facility[]) {
   URL.revokeObjectURL(url);
 }
 
-export function Legend({ total, mapped, unplotted, capacities, facilities }: { total: number; mapped: number; unplotted: number; capacities: CapacityTotals; facilities: Facility[] }) {
+export function Legend({ total, mapped, unplotted, capacities, facilities, data, geography, filters }: { total: number; mapped: number; unplotted: number; capacities: CapacityTotals; facilities: Facility[]; data: AtlasDataset; geography: string; filters: AtlasFilters }) {
+  const [lineageState, setLineageState] = useState<"idle" | "loading" | "error">("idle");
   const number = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-  return <div className="legend" aria-label="Map legend"><div>{classifications.map((classification) => <span key={classification}><i className={`dot ${classification}`}/>{title(classification)}</span>)}</div><div><strong>{number.format(total)} records</strong><span>◉ Mapped {number.format(mapped)}</span><span>○ Unplotted {number.format(unplotted)}</span></div><div className="capacity-legend"><strong>Installed capacity</strong><span>{number.format(capacities.electricalMw)} electrical MW</span><span>{number.format(capacities.thermalMw)} thermal MW</span><span>{number.format(capacities.storagePowerMw)} storage MW</span><span>{number.format(capacities.storageEnergyMwh)} storage MWh</span><button className="text-button" onClick={() => downloadCapacityLineage(facilities)}>Download calculation lineage</button></div></div>;
+  const download = () => {
+    setLineageState("loading");
+    void downloadCapacityLineage(data, facilities, geography, filters)
+      .then(() => setLineageState("idle"))
+      .catch(() => setLineageState("error"));
+  };
+  return <div className="legend" aria-label="Map legend"><div>{classifications.map((classification) => <span key={classification}><i className={`dot ${classification}`}/>{title(classification)}</span>)}</div><div><strong>{number.format(total)} records</strong><span>◉ Mapped {number.format(mapped)}</span><span>○ Unplotted {number.format(unplotted)}</span></div><div className="capacity-legend"><strong>Installed capacity</strong><span>{number.format(capacities.electricalMw)} electrical MW</span><span>{number.format(capacities.thermalMw)} thermal MW</span><span>{number.format(capacities.storagePowerMw)} storage MW</span><span>{number.format(capacities.storageEnergyMwh)} storage MWh</span><button className="text-button" disabled={lineageState === "loading"} onClick={download}>{lineageState === "loading" ? "Preparing verified lineage…" : "Download calculation lineage"}</button>{lineageState === "error" && <span role="alert">Verified lineage unavailable. Download the full evidence release instead.</span>}</div></div>;
 }

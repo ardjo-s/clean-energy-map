@@ -187,6 +187,57 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(result["records"][0]["plot"]["coordinates"], [-75.2, 40.5])
         self.assertEqual(result["counts"]["rejected"], 1)
 
+    def test_gem_real_schema_is_preserved_without_automatic_name_merge(self) -> None:
+        result = self.gem({
+            "Type": "Wind",
+            "Country/area": "United States",
+            "Plant / Project name": "Sand Point",
+            "Unit / Phase name": "Phase 1",
+            "Capacity (MW)": "0.5",
+            "Status": "operating",
+            "Start year": "2024",
+            "Technology": "Onshore",
+            "Operator(s)": "Example Operator",
+            "Owner(s)": "Example Owner",
+            "Owner(s) GEM Entity ID": "E1000001",
+            "Parent(s)": "Example Parent",
+            "Parent(s) GEM Entity ID": "E1000002",
+            "Latitude": "55.3",
+            "Longitude": "-160.4",
+            "Location accuracy": "approximate",
+            "GEM location ID": "L1000001",
+            "GEM unit/phase ID": "W1000001",
+            "GEM.Wiki URL": "https://www.gem.wiki/Example",
+        })
+        record = result["records"][0]
+        self.assertEqual(record["match_state"], "review_required")
+        self.assertEqual(record["match_method"], "candidate_only_no_merge")
+        self.assertNotIn("plot", record)
+        self.assertEqual(record["values"]["technology_family"], "onshore_wind")
+        self.assertEqual(record["values"]["owner_gem_entity_id"], "E1000001")
+        self.assertEqual(record["values"]["gem_wiki_url"], "https://www.gem.wiki/Example")
+        self.assertEqual(result["rows_read"], 1)
+        self.assertIn("GEM unit/phase ID", result["upstream_schema"])
+
+    def test_gem_xlsx_finds_current_unit_header_after_about_sheet(self) -> None:
+        about = b'''<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>About</t></is></c></row></sheetData></worksheet>'''
+        data = b'''<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Type</t></is></c><c r="B1" t="inlineStr"><is><t>Country/area</t></is></c><c r="C1" t="inlineStr"><is><t>Plant / Project name</t></is></c><c r="D1" t="inlineStr"><is><t>Capacity (MW)</t></is></c><c r="E1" t="inlineStr"><is><t>Technology</t></is></c><c r="F1" t="inlineStr"><is><t>Location accuracy</t></is></c><c r="G1" t="inlineStr"><is><t>GEM unit/phase ID</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>Nuclear</t></is></c><c r="B2" t="inlineStr"><is><t>United States</t></is></c><c r="C2" t="inlineStr"><is><t>Example Plant</t></is></c><c r="D2"><v>100</v></c><c r="E2" t="inlineStr"><is><t>PWR</t></is></c><c r="F2" t="inlineStr"><is><t>exact</t></is></c><c r="G2" t="inlineStr"><is><t>N1000001</t></is></c></row></sheetData></worksheet>'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.xlsx"
+            with zipfile.ZipFile(path, "w") as workbook:
+                workbook.writestr("xl/worksheets/sheet1.xml", about)
+                workbook.writestr("xl/worksheets/sheet2.xml", data)
+            result = connectors.normalize_gem(path.read_bytes(), ".xlsx", meta("gem-gipt"), self.eia["records"])
+        self.assertEqual([item["record_key"] for item in result["records"]], ["N1000001"])
+        self.assertEqual(result["rows_read"], 1)
+        self.assertEqual(result["upstream_schema"][-1], "GEM unit/phase ID")
+
+    def test_gem_out_of_scope_type_is_skipped_not_rejected(self) -> None:
+        result = self.gem({"Type": "Coal", "Country/area": "United States", "GEM unit/phase ID": "C1000001"})
+        self.assertEqual(result["rows_read"], 1)
+        self.assertEqual(result["records"], [])
+        self.assertEqual(result["counts"]["rejected"], 0)
+
     def test_inline_xlsx_strings_are_retained(self) -> None:
         worksheet = b'''<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>GEM unit ID</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>GEM-42</t></is></c></row></sheetData></worksheet>'''
         with tempfile.TemporaryDirectory() as directory:
@@ -237,6 +288,12 @@ class ConnectorTests(unittest.TestCase):
         after = hashlib.sha256(connectors.PUBLIC_RELEASE.read_bytes()).hexdigest()
         self.assertEqual(rc, 0)
         self.assertEqual(before, after)
+
+    def test_explicit_repository_fixture_records_fixture_acquisition(self) -> None:
+        raw, suffix, method = connectors.acquire(connectors.FIXTURES / "ember-us-2024.json", None, connectors.FIXTURES / "ember-us-2024.json", False)
+        self.assertTrue(raw)
+        self.assertEqual(suffix, ".json")
+        self.assertEqual(method, "pinned_offline_fixture")
 
     def test_offline_json_output_is_deterministic_and_failures_are_structured(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -324,6 +381,25 @@ class ConnectorTests(unittest.TestCase):
             with mock.patch.object(Path, "replace", fail_second), self.assertRaisesRegex(OSError, "injected"):
                 ingest.activate_staged(staged, destinations)
             self.assertEqual([item.read_text() for item in destinations], ["old-0", "old-1", "old-2"])
+
+    def test_release_candidate_validation_uses_exact_staged_paths(self) -> None:
+        compact = Path("/tmp/staged-compact.json")
+        full = Path("/tmp/staged-full.json")
+        with mock.patch.object(ingest.shutil, "which", return_value="/usr/bin/npm"), mock.patch.object(ingest.subprocess, "run") as run:
+            ingest.validate_staged(compact, full)
+        run.assert_called_once_with(
+            ["/usr/bin/npm", "run", "verify:data", "--", "--compact", str(compact), "--full", str(full)],
+            cwd=ingest.ROOT,
+            check=True,
+        )
+
+    def test_failed_candidate_validation_cannot_replace_public_release(self) -> None:
+        destinations = (ingest.RAW_ROWS, ingest.RAW_OWNERSHIP_ROWS, ingest.FULL_OUTPUT, ingest.OUTPUT)
+        before = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in destinations}
+        with mock.patch.object(ingest, "validate_staged", side_effect=RuntimeError("invalid candidate")), self.assertRaisesRegex(RuntimeError, "invalid candidate"):
+            ingest.main(["--activate"])
+        after = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in destinations}
+        self.assertEqual(after, before)
 
 
 if __name__ == "__main__":

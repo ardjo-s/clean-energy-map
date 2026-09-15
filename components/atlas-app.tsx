@@ -67,7 +67,7 @@ export function AtlasApp() {
     <div className="workspace">
       <MapCanvas facilities={facilities} selectedId={selected?.id ?? null} geography={url.geography} viewState={url.map} facilitiesVisible={facilitiesVisible} onSelect={selectFacility} onViewState={updateMapView}/>
       <ControlPanel open={filtersOpen} setOpen={setFiltersOpen} filters={url.filters} allFacilities={data.facilities} geography={url.geography} geographies={geographies} facilitiesVisible={facilitiesVisible} onFacilitiesVisible={setFacilitiesVisible} onGeography={selectGeography} onChange={(filters) => setUrl((old) => ({ ...old, filters }), "replace")}/>
-      <Legend {...locations} capacities={capacities} facilities={facilities}/>
+      <Legend {...locations} capacities={capacities} facilities={facilities} data={data} geography={url.geography} filters={url.filters}/>
       {!selected && !url.drawer && url.geography !== "WORLD" && <CountryProfile code={url.geography} data={data} onClose={() => selectGeography("WORLD")}/>}
       {selected && !url.drawer && <FacilityInspector facility={selected} data={data} onClose={() => setUrl((old) => ({ ...old, facility: null }))}/>}
       <EvidenceDrawer page={url.drawer} geography={url.geography} data={data} onClose={() => setUrl((old) => ({ ...old, drawer: null }))}/>
