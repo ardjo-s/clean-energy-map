@@ -1,0 +1,789 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R 13 0 R 15 0 R] /Count 7 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 3438 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+(Clean and Low-Carbon Energy Sources: Complete Taxonomy \(IPCC/ADEME Focus\)) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Executive Summary) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(?Clean energy? has no single universal legal definition. For a) Tj
+0 -13 Td
+(carbon-focused answer, the defensible definition is low lifecycle) Tj
+0 -13 Td
+(greenhouse-gas emissions, measured in carbon-dioxide equivalent \(CO?e\),) Tj
+0 -13 Td
+(not zero emissions at the point of operation. The IPCC uses a) Tj
+0 -13 Td
+(comparative ?low-carbon? concept: renewable sources, nuclear power, and) Tj
+0 -13 Td
+(fossil energy with carbon capture and storage \(CCS\) can all appear in) Tj
+0 -13 Td
+(low-carbon pathways, while unabated fossil fuels are excluded [1][2].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The clearest currently deployable low-carbon primary sources are wind,) Tj
+0 -13 Td
+(solar, hydropower, geothermal, marine energy where available, and) Tj
+0 -13 Td
+(nuclear fission. IPCC AR5 lifecycle medians are approximately 11) Tj
+0 -13 Td
+(gCO?e/kWh for onshore wind, 12 for offshore wind, 41?48 for photovoltaic) Tj
+0 -13 Td
+(solar, 24 for hydropower, 38 for geothermal, 27 for concentrating solar) Tj
+0 -13 Td
+(power, 17 for ocean energy, and 12 for nuclear; ranges can be wide) Tj
+0 -13 Td
+(because site, design, fuel supply and assumptions matter [3].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Biomass, waste-to-energy and fossil energy with CCS are conditional, not) Tj
+0 -13 Td
+(automatically clean. Hydrogen, ammonia, synthetic methane, methanol and) Tj
+0 -13 Td
+(e-kerosene are energy carriers, not primary energy sources; their carbon) Tj
+0 -13 Td
+(status depends on the electricity, feedstock and carbon source used to) Tj
+0 -13 Td
+(make them [2][4][5].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Introduction and Scope) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(This report answers ?which energy sources are clean in terms of carbon) Tj
+0 -13 Td
+(emissions?? in English, while retaining the distinctions used by the) Tj
+0 -13 Td
+(IPCC, ADEME, IEA, IRENA and NREL. ?Lifecycle? includes, as applicable,) Tj
+0 -13 Td
+(extraction or cultivation, materials and manufacturing, construction,) Tj
+0 -13 Td
+(fuel preparation, operation, maintenance, decommissioning and waste) Tj
+0 -13 Td
+(management. Lifecycle factors are normally expressed as gCO?e/kWh of) Tj
+0 -13 Td
+(electricity; heat and hydrogen use different functional units.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The list is split into \(A\) low-carbon primary sources, \(B\) conditional) Tj
+0 -13 Td
+(or borderline pathways, \(C\) carriers and enabling technologies that are) Tj
+0 -13 Td
+(not sources, and \(D\) sources that are not clean on a lifecycle-carbon) Tj
+0 -13 Td
+(basis. The IPCC table below is an international literature synthesis,) Tj
+0 -13 Td
+(not a France-specific guarantee. ADEME?s Base Empreinte/Base Carbone) Tj
+0 -13 Td
+(values should be used for French projects because manufacturing mix,) Tj
+0 -13 Td
+(fuel cycle, reservoir conditions and system boundaries change results) Tj
+0 -13 Td
+([6]. IRENA?s energy taxonomy is used to enumerate technology subtypes) Tj
+0 -13 Td
+(consistently [14], while NREL?s harmonised dataset is a cross-check on) Tj
+0 -13 Td
+(the spread of published lifecycle studies [15].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(1. Low-carbon primary sources available today) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Solar energy) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Solar photovoltaic \(PV\) is a renewable primary source converted directly) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 3537 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+(into electricity. Include rooftop, utility-scale ground-mounted,) Tj
+0 -13 Td
+(floating, building-integrated, agrivoltaic and off-grid PV. IPCC AR5) Tj
+0 -13 Td
+(gives lifecycle emissions of 26/41/60 gCO?e/kWh for rooftop PV and) Tj
+0 -13 Td
+(18/48/180 for utility PV \(minimum/median/maximum\) [3]. ADEME?s current) Tj
+0 -13 Td
+(French public figures are roughly 23?44 gCO?/kWh over the lifecycle,) Tj
+0 -13 Td
+(with older Base Carbone examples of 25.2 g/kWh for French-manufactured) Tj
+0 -13 Td
+(PV, 32.3 for a European manufacturing mix and 43.9 for the default) Tj
+0 -13 Td
+(Chinese mix [7]. PV is therefore low-carbon, but not impact-free:) Tj
+0 -13 Td
+(silicon, aluminium, glass, mining and manufacturing electricity dominate) Tj
+0 -13 Td
+(its footprint.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Concentrating solar power \(CSP\), also called solar-thermal electricity,) Tj
+0 -13 Td
+(uses mirrors and a receiver to produce heat and then electricity.) Tj
+0 -13 Td
+(Subtypes include parabolic trough, central-receiver/power-tower, linear) Tj
+0 -13 Td
+(Fresnel and dish/engine systems, often with molten-salt thermal storage.) Tj
+0 -13 Td
+(IPCC AR5 reports 8.8/27/63 gCO?e/kWh [3]. CSP is commercially available) Tj
+0 -13 Td
+(but geographically constrained by strong direct sunlight; solar thermal) Tj
+0 -13 Td
+(heat for buildings, hot water, district heating and industrial process) Tj
+0 -13 Td
+(heat is also a low-carbon use of direct solar energy. ADEME reports a) Tj
+0 -13 Td
+(carbon impact of about 8 gCO?/kWh for the collector alone and about 60) Tj
+0 -13 Td
+(gCO?/kWh when storage is included [8].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Wind energy) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Onshore wind includes utility wind farms and small or micro-turbines.) Tj
+0 -13 Td
+(Offshore wind includes fixed-bottom and floating foundations; floating) Tj
+0 -13 Td
+(wind is newer but technically deployable. IPCC AR5 gives 7/11/56) Tj
+0 -13 Td
+(gCO?e/kWh for onshore and 8/12/35 for offshore wind [3]. ADEME?s current) Tj
+0 -13 Td
+(French headline for onshore wind is about 12.7 gCO?/kWh over the) Tj
+0 -13 Td
+(lifecycle [9]. Direct operating CO? is essentially zero; embodied) Tj
+0 -13 Td
+(emissions come mostly from steel, concrete, composites, vessels and grid) Tj
+0 -13 Td
+(connection. Airborne/kite wind is an emerging concept, not a mature) Tj
+0 -13 Td
+(mainstream source.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Hydropower) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Run-of-river, diversion and conduit hydro use flowing water with little) Tj
+0 -13 Td
+(or no storage. Reservoir hydro uses dams and stored water.) Tj
+0 -13 Td
+(Pumped-storage hydro is primarily an electricity-storage technology, not) Tj
+0 -13 Td
+(a primary energy source; its carbon intensity depends on the electricity) Tj
+0 -13 Td
+(used to pump. IPCC AR5 gives hydropower 1/24/2200 gCO?e/kWh. The very) Tj
+0 -13 Td
+(high upper bound reflects methane from some flooded reservoirs,) Tj
+0 -13 Td
+(particularly in warm, carbon-rich sites [3]. ADEME?s current French) Tj
+0 -13 Td
+(public estimate is about 4?8 gCO?/kWh lifecycle [10]. Hydro is generally) Tj
+0 -13 Td
+(low-carbon, but project-specific reservoir methane, land-use change and) Tj
+0 -13 Td
+(ecosystem impacts must be checked.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Geothermal energy) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Conventional geothermal power includes dry-steam, flash-steam and) Tj
+0 -13 Td
+(binary-cycle plants. Direct geothermal heat supplies buildings, district) Tj
+0 -13 Td
+(heating, agriculture and industry. Enhanced geothermal systems) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 3312 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+(\(EGS\)/hot-dry-rock and closed-loop geothermal expand the resource base) Tj
+0 -13 Td
+(but remain emerging or demonstration-stage in many regions. IPCC AR5) Tj
+0 -13 Td
+(reports 6/38/79 gCO?e/kWh for geothermal electricity [3]. IPCC AR6) Tj
+0 -13 Td
+(distinguishes hydrothermal systems from EGS and shallow geothermal heat) Tj
+0 -13 Td
+(pumps [2]. Geothermal is renewable on human timescales, but drilling,) Tj
+0 -13 Td
+(construction, dissolved gases, reinjection and induced-seismicity) Tj
+0 -13 Td
+(management affect the result.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Marine and ocean energy) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The complete marine-energy family includes tidal range \(barrages and) Tj
+0 -13 Td
+(lagoons\), tidal-stream/current turbines, wave energy, ocean-current) Tj
+0 -13 Td
+(energy, ocean thermal energy conversion \(OTEC\) and) Tj
+0 -13 Td
+(salinity-gradient/osmotic energy. IPCC AR5?s quantified ?ocean? category) Tj
+0 -13 Td
+(covers tidal and wave technologies and reports 5.6/17/28 gCO?e/kWh [3].) Tj
+0 -13 Td
+(OTEC, ocean-current and salinity-gradient systems have sparse,) Tj
+0 -13 Td
+(site-specific lifecycle evidence and are mostly pilot or) Tj
+0 -13 Td
+(early-commercial technologies; they should be described as low-carbon) Tj
+0 -13 Td
+(potential, not given a false universal number [2][11].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Nuclear fission) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Nuclear is low-carbon but not renewable. The current family includes) Tj
+0 -13 Td
+(pressurised- and boiling-water reactors,) Tj
+0 -13 Td
+(heavy-water/pressurised-heavy-water reactors, gas-cooled reactors,) Tj
+0 -13 Td
+(fast-spectrum reactors, life extensions and new large reactors; small) Tj
+0 -13 Td
+(modular reactors are under development and early deployment. IPCC AR5) Tj
+0 -13 Td
+(reports 3.7/12/110 gCO?e/kWh [3]. ADEME cites approximately 4 gCO?e/kWh) Tj
+0 -13 Td
+(for EDF?s 2022 French lifecycle study, about 5 g in a CEA comparison,) Tj
+0 -13 Td
+(and a former Base Carbone factor of 6 g [6]. These figures include) Tj
+0 -13 Td
+(uranium mining, conversion, enrichment, fuel fabrication, plant) Tj
+0 -13 Td
+(construction/operation, decommissioning, reprocessing and waste) Tj
+0 -13 Td
+(management. They do not remove non-climate issues such as radioactive) Tj
+0 -13 Td
+(waste, accident risk, water use or mining impacts.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Ambient and recovered heat) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Ambient renewable heat from air, surface water and shallow ground is) Tj
+0 -13 Td
+(harvested by air-source, water-source and ground-source heat pumps. The) Tj
+0 -13 Td
+(heat flow is renewable, but the pump?s carbon intensity follows its) Tj
+0 -13 Td
+(electricity supply and refrigerant leakage. Waste-heat recovery from) Tj
+0 -13 Td
+(industry, wastewater, data centres and other processes is a low-carbon) Tj
+0 -13 Td
+(energy-recovery pathway, not a primary renewable source; its operating) Tj
+0 -13 Td
+(emissions can be near zero when the heat would otherwise be rejected) Tj
+0 -13 Td
+([12].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(2. Conditional or borderline low-carbon pathways) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Bioenergy) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Bioenergy includes solid biomass \(wood, pellets, agricultural and) Tj
+0 -13 Td
+(forestry residues, bagasse, black liquor\), biomass heat and power,) Tj
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 10 0 R >>
+endobj
+10 0 obj
+<< /Length 3555 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+(biogas/biomethane from anaerobic digestion or landfill gas,) Tj
+0 -13 Td
+(gasification/pyrolysis gases, and liquid biofuels such as ethanol,) Tj
+0 -13 Td
+(biodiesel, renewable diesel/HVO and sustainable aviation fuels. The) Tj
+0 -13 Td
+(renewable fraction of wastes can also be used.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The category is not automatically clean. IPCC AR5 gives 130/230/420) Tj
+0 -13 Td
+(gCO?e/kWh for dedicated biomass and 620/740/890 for biomass co-firing) Tj
+0 -13 Td
+([3]. IPCC AR6 says lifecycle emissions can be incompatible with net zero) Tj
+0 -13 Td
+(depending on feedstock, land-use change, cultivation, transport,) Tj
+0 -13 Td
+(conversion efficiency and system boundary [2]. Residues, manure, sewage) Tj
+0 -13 Td
+(and unavoidable biogenic wastes can be much better than dedicated energy) Tj
+0 -13 Td
+(crops, but every pathway requires a feedstock-specific LCA. BECCS) Tj
+0 -13 Td
+(\(bioenergy with CCS\) is a carbon-removal configuration, not a) Tj
+0 -13 Td
+(universally carbon-negative source.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Waste-to-energy) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Incineration, refuse-derived fuel, gasification, pyrolysis, anaerobic) Tj
+0 -13 Td
+(digestion and landfill-gas recovery can produce heat, electricity or) Tj
+0 -13 Td
+(fuels. Mixed municipal waste contains both biogenic and fossil carbon) Tj
+0 -13 Td
+(\(plastics\), and combustion also creates regulated air pollutants and) Tj
+0 -13 Td
+(residues. ADEME treats energy recovery as a last resort after) Tj
+0 -13 Td
+(prevention, reuse and recycling [13]. Classify waste-to-energy as) Tj
+0 -13 Td
+(conditional low-carbon, cleaner when it uses unavoidable biogenic) Tj
+0 -13 Td
+(residues and robust methane/air-pollution controls, not as intrinsically) Tj
+0 -13 Td
+(zero-carbon.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Fossil fuels with CCS/CCUS) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Coal or gas with high-rate CO? capture, transport and permanent) Tj
+0 -13 Td
+(geological storage can be low-carbon in IPCC mitigation pathways, but it) Tj
+0 -13 Td
+(is not zero-carbon and CCS is a process, not a source. IPCC AR5) Tj
+0 -13 Td
+(lifecycle values remain substantial: coal CCS roughly 100?250 gCO?e/kWh) Tj
+0 -13 Td
+(and gas CCS roughly 94?340 gCO?e/kWh, with residual combustion, upstream) Tj
+0 -13 Td
+(methane, energy penalty and possible storage leakage [3]. IPCC AR6) Tj
+0 -13 Td
+(therefore requires minimal unabated fossil use and treats CCS in power) Tj
+0 -13 Td
+(as conditional and less mature [1][2].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(3. Carriers and enabling technologies: clean only conditionally) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Hydrogen is an energy carrier, not a primary energy source. Electrolytic) Tj
+0 -13 Td
+(?green? hydrogen can be low-carbon when powered by genuinely low-carbon) Tj
+0 -13 Td
+(renewable electricity; nuclear-powered electrolysis is low-carbon but) Tj
+0 -13 Td
+(not renewable. ADEME?s current lifecycle figures per kg H? are) Tj
+0 -13 Td
+(approximately 0.45 \(hydropower electrolysis\), 0.70 \(wind\), 2.58 \(PV\),) Tj
+0 -13 Td
+(2.77 \(French grid\) and 11.1 \(natural-gas steam reforming\) [4]. ?Blue?) Tj
+0 -13 Td
+(hydrogen \(gas reforming plus CCS\) remains conditional because methane) Tj
+0 -13 Td
+(leakage and incomplete capture can erase much of the benefit [5].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Ammonia, e-methanol, e-methane, e-kerosene and other synthetic fuels are) Tj
+0 -13 Td
+(also carriers. They are low-carbon only if their hydrogen is low-carbon,) Tj
+0 -13 Td
+(their process electricity is low-carbon, and any carbon input comes from) Tj
+ET
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 12 0 R >>
+endobj
+12 0 obj
+<< /Length 3371 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+(biogenic sources or direct air capture rather than fossil CO?.) Tj
+0 -13 Td
+(Combustion that emits no fossil CO? at the point of use does not prove) Tj
+0 -13 Td
+(lifecycle carbon neutrality [2][4].) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Batteries, pumped hydro, thermal storage, compressed air and flywheels) Tj
+0 -13 Td
+(store energy; they are not energy sources. Efficiency, demand reduction) Tj
+0 -13 Td
+(and smart-grid measures reduce emissions but are not sources either.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(4. Not clean on a lifecycle-carbon basis) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Unabated coal, oil and natural gas are not clean. IPCC AR5 medians are) Tj
+0 -13 Td
+(about 820 gCO?e/kWh for coal and 490 for combined-cycle gas, against) Tj
+0 -13 Td
+(11?48 for most wind, solar, hydro, geothermal, ocean and nuclear options) Tj
+0 -13 Td
+([3]. ?Natural gas,? ?LNG,? ?renewable-looking? gas without verified) Tj
+0 -13 Td
+(feedstock, and hydrogen made from unabated coal or gas must not be) Tj
+0 -13 Td
+(labelled clean.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Fusion has no commercial energy source today and no mature, agreed) Tj
+0 -13 Td
+(lifecycle factor. It belongs in future R&D, not in a list of currently) Tj
+0 -13 Td
+(available clean sources.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Synthesis and practical classification) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(For a strict present-day carbon screen, the ?clean? core is: solar PV,) Tj
+0 -13 Td
+(CSP, onshore and offshore wind, most well-sited hydropower, conventional) Tj
+0 -13 Td
+(geothermal, tidal and wave where deployed, and nuclear fission. Direct) Tj
+0 -13 Td
+(solar heat, geothermal heat, ambient heat pumps and genuinely recovered) Tj
+0 -13 Td
+(waste heat are low-carbon heat sources when electricity and equipment) Tj
+0 -13 Td
+(are included correctly.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The two most important caveats are variability and lifecycle boundaries.) Tj
+0 -13 Td
+(Wind and solar require grids, demand flexibility and storage; this does) Tj
+0 -13 Td
+(not make their generation carbon-intensive, but system-level emissions) Tj
+0 -13 Td
+(must be evaluated separately. Hydropower can be exceptionally low-carbon) Tj
+0 -13 Td
+(or unusually high-carbon if a reservoir produces methane. Biomass can be) Tj
+0 -13 Td
+(low-carbon when based on sustainable residues or wastes, but high-carbon) Tj
+0 -13 Td
+(when it drives land-use change. The correct comparison is therefore) Tj
+0 -13 Td
+(technology plus site, feedstock, electricity mix, lifetime and) Tj
+0 -13 Td
+(boundary?not a universal ?renewable = zero? label.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Limitations and Caveats) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The IPCC table is a harmonised literature range, not a current plant) Tj
+0 -13 Td
+(certificate; ADEME?s French factors use different vintages and) Tj
+0 -13 Td
+(boundaries. Values may change with manufacturing electricity, capacity) Tj
+0 -13 Td
+(factor, plant lifetime, reservoir conditions, fuel enrichment route,) Tj
+0 -13 Td
+(methane leakage and treatment of biogenic carbon. The numbers are) Tj
+0 -13 Td
+(CO?-equivalent, not pure CO? only, and they do not cover biodiversity,) Tj
+0 -13 Td
+(land, water, toxicity, radioactive waste or social impacts.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Marine subtypes beyond tidal and wave, EGS, floating wind, advanced) Tj
+0 -13 Td
+(nuclear, blue hydrogen and synthetic fuels do not yet have one robust) Tj
+ET
+endstream
+endobj
+13 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 14 0 R >>
+endobj
+14 0 obj
+<< /Length 3031 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+(global lifecycle factor. Use project-specific LCAs and disclose) Tj
+0 -13 Td
+(functional unit, system boundary, geography and whether storage/grid) Tj
+0 -13 Td
+(balancing is included.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Recommendations) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(1.  Use ?low-lifecycle-GHG? rather than ?zero-carbon? in procurement and) Tj
+0 -13 Td
+(    policy documents.) Tj
+0 -13 Td
+(2.  For France, start with ADEME Base Empreinte/Base Carbone factors and) Tj
+0 -13 Td
+(    replace generic international medians with project-specific data.) Tj
+0 -13 Td
+(3.  Treat biomass, waste-to-energy and fossil CCS as conditional) Tj
+0 -13 Td
+(    pathways requiring feedstock, methane, capture-rate and storage) Tj
+0 -13 Td
+(    evidence.) Tj
+0 -13 Td
+(4.  Keep primary sources separate from carriers \(hydrogen, ammonia,) Tj
+0 -13 Td
+(    e-fuels\) and storage \(batteries, pumped hydro\).) Tj
+0 -13 Td
+(5.  Report both plant-level lifecycle emissions and system-level impacts) Tj
+0 -13 Td
+(    from grids, transmission, storage and backup.) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Bibliography) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([1] IPCC \(2022\). ?Summary for Policymakers, WGIII AR6.?) Tj
+0 -13 Td
+(https://www.ipcc.ch/report/ar6/wg3/chapter/summary-for-policymakers/) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([2] IPCC \(2022\). ?Chapter 6: Energy Systems, WGIII AR6.?) Tj
+0 -13 Td
+(https://www.ipcc.ch/report/ar6/wg3/chapter/chapter-6/) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([3] IPCC \(2014\). ?Annex III: Technology-specific Cost and Performance) Tj
+0 -13 Td
+(Parameters, Table A.III.2.?) Tj
+0 -13 Td
+(https://www.ipcc.ch/site/assets/uploads/2018/02/ipcc_wg3_ar5_annex-iii.pdf) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([4] ADEME \(2026\). ?Hydrogen: renewable and low-carbon energy vector.?) Tj
+0 -13 Td
+(https://agirpourlatransition.ademe.fr/entreprises/conseils/transport-entreposage/transport-durable/hydrogene) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([5] ADEME \(2024\). ?Is CO? capture a solution to decarbonise hydrogen??) Tj
+0 -13 Td
+(https://www.ademe.fr/presse/communique-national/hydrogene-la-capture-de-co2-est-elle-une-solution-pour-decarboner-ce-vecteur/) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([6] ADEME. ?Conventionnel: production electricity emission factors and) Tj
+0 -13 Td
+(French nuclear LCA.?) Tj
+0 -13 Td
+(https://prod-basecarbonesolo.ademe-dri.fr/documentation/UPLOAD_DOC_FR/conventionnel.htm) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([7] ADEME. ?Photovoltaic energy.?) Tj
+0 -13 Td
+(https://agirpourlatransition.ademe.fr/collectivites/conseils/energies/photovoltaique) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([8] ADEME. ?Solar thermal energy.?) Tj
+0 -13 Td
+(https://agirpourlatransition.ademe.fr/collectivites/conseils/energies/solaire-thermique) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([9] ADEME. ?Onshore wind energy.?) Tj
+0 -13 Td
+(https://agirpourlatransition.ademe.fr/collectivites/conseils/energies/eolien-terrestre) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([10] ADEME. ?Hydroelectricity.?) Tj
+0 -13 Td
+(https://agirpourlatransition.ademe.fr/collectivites/conseils/energies/hydroelectricite) Tj
+0 -13 Td
+() Tj
+ET
+endstream
+endobj
+15 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 17 0 R >> >> /Contents 16 0 R >>
+endobj
+16 0 obj
+<< /Length 1571 >>
+stream
+BT
+/F1 9 Tf
+50 760 Td
+([11] IPCC \(2011\). ?Special Report on Renewable Energy Sources: Ocean) Tj
+0 -13 Td
+(Energy.?) Tj
+0 -13 Td
+(https://archive.ipcc.ch/pdf/special-reports/srren/Chapter%206%20Ocean%20Energy.pdf) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([12] ADEME. ?Recovered heat.?) Tj
+0 -13 Td
+(https://agirpourlatransition.ademe.fr/collectivites/conseils/energies/chaleur-recuperation) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([13] ADEME. ?Energy recovery from waste.?) Tj
+0 -13 Td
+(https://economie-circulaire.ademe.fr/valorisation-energetique-dechets) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([14] IRENA \(2024\). ?Energy Taxonomy.?) Tj
+0 -13 Td
+(https://www.irena.org/-/media/Files/IRENA/Agency/Publication/2024/Mar/IRENA_Energy_taxonomy_2024.pdf) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+([15] NREL \(2021, updated 2025\). ?Life Cycle Emissions Factors for) Tj
+0 -13 Td
+(Electricity Generation Technologies.?) Tj
+0 -13 Td
+(https://data.nrel.gov/submissions/171) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(Methodology Appendix) Tj
+0 -13 Td
+() Tj
+0 -13 Td
+(The research triangulated approved IPCC AR5/AR6 reports, ADEME Base) Tj
+0 -13 Td
+(Empreinte/Base Carbone and current ADEME technology pages, plus IEA,) Tj
+0 -13 Td
+(IRENA, NREL and UNECE taxonomy/LCA material. Claims were separated into) Tj
+0 -13 Td
+(operational emissions, lifecycle emissions, and energy-carrier status.) Tj
+0 -13 Td
+(IPCC AR5 Table A.III.2 was used as the common numerical benchmark; ADEME) Tj
+0 -13 Td
+(French values were used where available. Emerging technologies were) Tj
+0 -13 Td
+(included only with an explicit maturity and uncertainty label.) Tj
+ET
+endstream
+endobj
+17 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 18
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000160 00000 n 
+0000000287 00000 n 
+0000003777 00000 n 
+0000003904 00000 n 
+0000007493 00000 n 
+0000007620 00000 n 
+0000010984 00000 n 
+0000011112 00000 n 
+0000014720 00000 n 
+0000014849 00000 n 
+0000018273 00000 n 
+0000018402 00000 n 
+0000021486 00000 n 
+0000021615 00000 n 
+0000023239 00000 n 
+trailer
+<< /Size 18 /Root 1 0 R >>
+startxref
+23310
+%%EOF

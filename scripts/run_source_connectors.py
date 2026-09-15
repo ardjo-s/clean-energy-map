@@ -18,6 +18,8 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import time
+import zipfile
+from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +27,7 @@ from typing import Any
 from xlsx_reader import iter_xlsx_records, iter_xlsx_rows
 
 ROOT = Path(__file__).resolve().parents[1]
-CONNECTOR_VERSION = "1.0.0"
+CONNECTOR_VERSION = "1.1.0"
 PUBLIC_RELEASE = ROOT / "public/data/atlas-v1.json"
 ANNUAL_EIA = ROOT / "public/data/downloads/eia860-relevant-generators.jsonl"
 FIXTURES = ROOT / "data/connectors/fixtures"
@@ -53,6 +55,42 @@ PUBLISHED_TECHNOLOGIES = {
     "Landfill Gas",
 }
 
+EIA_TECHNOLOGY_FAMILIES = {
+    "Solar Photovoltaic": "solar_photovoltaic",
+    "Solar Thermal with Energy Storage": "concentrated_solar_power",
+    "Solar Thermal without Energy Storage": "concentrated_solar_power",
+    "Onshore Wind Turbine": "onshore_wind",
+    "Offshore Wind Turbine": "offshore_wind",
+    "Conventional Hydroelectric": "hydropower_unspecified",
+    "Hydroelectric Pumped Storage": "pumped_hydro_storage",
+    "Geothermal": "geothermal",
+    "Nuclear": "nuclear_fission",
+    "Batteries": "battery_storage",
+    "Flywheels": "other_storage",
+    "Wood/Wood Waste Biomass": "solid_biomass_residues",
+    "Other Waste Biomass": "solid_biomass_residues",
+    "Municipal Solid Waste": "solid_biomass_residues",
+    "Landfill Gas": "solid_biomass_residues",
+}
+
+
+def gem_technology_family(gem_type: Any, technology: Any) -> str | None:
+    source_type = str(gem_type or "").strip().casefold()
+    detail = str(technology or "").strip().casefold()
+    if not source_type:
+        return EIA_TECHNOLOGY_FAMILIES.get(str(technology))
+    if source_type == "utility-scale solar":
+        return "concentrated_solar_power" if detail == "solar thermal" else "solar_photovoltaic" if detail == "pv" else None
+    if source_type == "wind":
+        return "offshore_wind" if detail.startswith("offshore") else "onshore_wind" if detail == "onshore" else None
+    if source_type == "hydropower":
+        return "pumped_hydro_storage" if detail == "pumped storage" else "hydropower_unspecified"
+    return {
+        "bioenergy": "solid_biomass_residues",
+        "geothermal": "geothermal",
+        "nuclear": "nuclear_fission",
+    }.get(source_type)
+
 
 def canonical_json(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
@@ -68,7 +106,7 @@ def stable_id(prefix: str, *parts: Any) -> str:
 
 
 def read_url(url: str, *, attempts: int = 3) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "clean-energy-map-connector/1.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": f"clean-energy-map-connector/{CONNECTOR_VERSION}"})
     for attempt in range(attempts):
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
@@ -279,22 +317,28 @@ def parse_number(value: Any, field: str) -> float | None:
     return number
 
 
-def generic_rows(raw: bytes, suffix: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def generic_rows(raw: bytes, suffix: str) -> tuple[dict[str, Any], Iterable[dict[str, Any]]]:
     if suffix == ".json":
         return load_json_payload(raw)
     if suffix == ".xlsx":
-        with temporary_source_file(raw, ".xlsx") as path:
-            header_row = None
-            for row_number, row in enumerate(iter_xlsx_rows(path), start=1):
-                folded = {str(value).strip().casefold() for value in row if value not in (None, "")}
-                if {"gem unit id", "gem id", "unit id"} & folded:
-                    header_row = row_number
-                    break
-                if row_number >= 25:
-                    break
-            if header_row is None:
+        def xlsx_records() -> Iterable[dict[str, Any]]:
+            with temporary_source_file(raw, ".xlsx") as path:
+                with zipfile.ZipFile(path) as workbook:
+                    sheets = sorted(
+                        (name for name in workbook.namelist() if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name)),
+                        key=lambda name: int(re.search(r"(\d+)", name).group(1)),
+                    )
+                for sheet in sheets:
+                    for row_number, row in enumerate(iter_xlsx_rows(path, sheet), start=1):
+                        folded = {str(value).strip().casefold() for value in row if value not in (None, "")}
+                        if {"gem unit id", "gem unit/phase id", "gem id", "unit id"} & folded:
+                            yield from iter_xlsx_records(path, header_row=row_number, sheet=sheet)
+                            return
+                        if row_number >= 25:
+                            break
                 raise RuntimeError("Could not find a GEM unit identifier header in the official XLSX export")
-            return {}, list(iter_xlsx_records(path, header_row=header_row))
+
+        return {}, xlsx_records()
     text = raw.decode("utf-8-sig")
     return {}, list(csv.DictReader(io.StringIO(text)))
 
@@ -319,15 +363,24 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
     counts = {key: 0 for key in ("added", "changed", "unchanged", "conflicted", "unmatched", "rejected", "review_required", "ambiguous", "matched")}
     rejected_rows = []
     seen: set[str] = set()
+    rows_read = 0
+    upstream_schema: list[str] = []
     for index, row in enumerate(rows, start=1):
+        rows_read += 1
+        if not upstream_schema:
+            upstream_schema = [str(key) for key in row]
         country = str(pick(row, "Country/area", "Country", "country") or "")
+        gem_type = pick(row, "Type", "type")
         technology = pick(row, "Technology", "technology")
+        technology_family = gem_technology_family(gem_type, technology)
         restriction = pick(row, "License restriction", "license_restriction")
-        if country not in {"United States", "United States of America", "USA", "US"} or (technology and technology not in PUBLISHED_TECHNOLOGIES) or restriction:
+        if country not in {"United States", "United States of America", "USA", "US"} or technology_family is None:
+            continue
+        if restriction:
             counts["rejected"] += 1
             rejected_rows.append({"row": index, "reason": "out_of_scope_or_restricted", "restriction": restriction})
             continue
-        gem_id = pick(row, "GEM unit ID", "gem_unit_id", "GEM ID")
+        gem_id = pick(row, "GEM unit ID", "GEM unit/phase ID", "gem_unit_id", "GEM ID")
         if not gem_id:
             counts["rejected"] += 1
             rejected_rows.append({"row": index, "reason": "missing_gem_unit_id"})
@@ -348,15 +401,24 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
             continue
         values = {
             "gem_unit_id": str(gem_id),
-            "name": pick(row, "Project name", "Plant name", "name"),
-            "technology": technology,
+            "gem_location_id": pick(row, "GEM location ID", "gem_location_id"),
+            "name": pick(row, "Plant / Project name", "Project name", "Plant name", "name"),
+            "unit_name": pick(row, "Unit / Phase name", "unit_name"),
+            "technology": gem_type or technology,
+            "technology_detail": technology if gem_type else None,
+            "technology_family": technology_family,
             "status": pick(row, "Status", "status"),
             "capacity_mw": capacity_mw,
             "start_date": pick(row, "Start year", "start_date"),
             "retirement_date": pick(row, "Retired year", "retirement_date"),
-            "owner": pick(row, "Owner", "owner"),
+            "operator": pick(row, "Operator(s)", "operator", "operators"),
+            "owner": pick(row, "Owner(s)", "Owner", "owner"),
+            "owner_gem_entity_id": pick(row, "Owner(s) GEM Entity ID", "owner_gem_entity_id"),
+            "parent": pick(row, "Parent(s)", "parent", "parents"),
+            "parent_gem_entity_id": pick(row, "Parent(s) GEM Entity ID", "parent_gem_entity_id"),
             "location_precision": pick(row, "Location accuracy", "location_precision"),
-            "upstream_sources": pick(row, "Sources", "sources"),
+            "upstream_sources": pick(row, "Sources", "sources", "GEM.Wiki URL"),
+            "gem_wiki_url": pick(row, "GEM.Wiki URL", "gem_wiki_url"),
         }
         values = {key: value for key, value in values.items() if value not in (None, "")}
         record, items = observed_record(meta, str(gem_id), values, {"capacity_mw": "MW"})
@@ -368,7 +430,8 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
         elif len(exact) == 1:
             target = exact[0]
             conflicts = []
-            if values.get("technology") and values["technology"] != target["values"].get("technology"):
+            target_family = EIA_TECHNOLOGY_FAMILIES.get(str(target["values"].get("technology")))
+            if target_family != technology_family:
                 conflicts.append("technology")
             if values.get("capacity_mw") is not None and float(values["capacity_mw"]) != float(target["values"].get("nameplate_capacity_mw") or 0):
                 conflicts.append("capacity_mw")
@@ -390,7 +453,7 @@ def normalize_gem(raw: bytes, suffix: str, meta: dict[str, Any], eia_records: li
             record["plot"] = {"coordinates": [longitude, latitude], "location_observation_ids": [item["id"] for item in location_items], "precision": precision}
         records.append(record)
         observations.extend(items)
-    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "counts": counts, "rejected_rows": rejected_rows}
+    return {"records": sorted(records, key=lambda item: item["record_key"]), "observations": sorted(observations, key=lambda item: item["id"]), "counts": counts, "rejected_rows": rejected_rows, "rows_read": rows_read, "upstream_schema": upstream_schema}
 
 
 def normalize_ember(raw: bytes, suffix: str, meta: dict[str, Any]) -> dict[str, Any]:
@@ -518,7 +581,8 @@ def persist_snapshot(store: Path, raw: bytes, suffix: str, meta: dict[str, Any],
 
 def acquire(path: Path | None, url: str | None, fixture: Path, offline: bool) -> tuple[bytes, str, str]:
     if path:
-        return path.read_bytes(), path.suffix.lower(), "manual_official_download"
+        method = "pinned_offline_fixture" if path.resolve().parent == FIXTURES.resolve() else "manual_official_download"
+        return path.read_bytes(), path.suffix.lower(), method
     if offline:
         return fixture.read_bytes(), fixture.suffix.lower(), "pinned_offline_fixture"
     if not url:
@@ -529,7 +593,7 @@ def acquire(path: Path | None, url: str | None, fixture: Path, offline: bool) ->
 def report_markdown(report: dict[str, Any]) -> str:
     lines = ["# Connector staging report", "", f"Public release: `{report['public_release']}` (unchanged)", ""]
     for source in report["sources"]:
-        lines += [f"## {source['source_id']}", "", f"- Release: `{source['release']}`", f"- SHA-256: `{source['checksum']}`", f"- Freshness: `{source['freshness_state']}`", f"- Rows read: `{source['rows_read']}`", f"- Observations: `{source['observations_created']}`", f"- Counts: `{json.dumps(source['counts'], sort_keys=True)}`", f"- Restrictions: `{json.dumps(source['restrictions'])}`", f"- Coverage: {source['coverage_limitations']}", ""]
+        lines += [f"## {source['source_id']}", "", f"- Release: `{source['release']}`", f"- SHA-256: `{source['checksum']}`", f"- Freshness: `{source['freshness_state']}`", f"- Rows read: `{source['rows_read']}`", f"- Observations: `{source['observations_created']}`", f"- Counts: `{json.dumps(source['counts'], sort_keys=True)}`", f"- License: `{source['license']}`", f"- Restrictions: `{json.dumps(source['restrictions'])}`", f"- Coverage: {source['coverage_limitations']}", f"- Potential public values: `{json.dumps(source['potentially_affected_public_values'])}`", ""]
         for reconciliation in source.get("reconciliations", []):
             lines += [f"- Reconciliation `{reconciliation['id']}`: Ember `{reconciliation['ember_value']} {reconciliation['unit']}`, EIA `{reconciliation['eia_value']} {reconciliation['unit']}`, difference `{reconciliation['difference']} {reconciliation['unit']}`, state `{reconciliation['selection']}`."]
         if source.get("reconciliations"):
@@ -565,9 +629,11 @@ def _main(argv: list[str] | None = None) -> int:
 
     gem_path = args.gem_file
     gem_raw, gem_suffix, gem_method = acquire(gem_path, None, FIXTURES / "gem-gipt-contract.json", args.offline)
-    gem_meta = source_meta("gem-gipt", "2026-03", GEM_URL, "2026-03-01", "rolling release", gem_method, "CC BY 4.0; row-level third-party restrictions still apply", [], ["GIPT unit-level export; accepted header aliases are documented in the connector tests"], "rolling after component tracker releases", ["Automatic download requires the official GEM form; no scraping or CAPTCHA bypass is attempted."], ["Pilot limited to the United States and technologies already published by the atlas.", "Approximate GEM locations remain unplotted."], recorded_retrieval)
+    gem_meta = source_meta("gem-gipt", "2026-03-II", GEM_URL, None, "rolling release", gem_method, "CC BY 4.0", ["Attribution required", "Any incompatible third-party row restriction blocks publication"], ["GIPT unit-level export; accepted header aliases are documented in the connector tests"], "rolling after component tracker releases", ["The workbook identifies this as the second March 2026 release but does not state an exact publication day.", "The export has no row-level license restriction column; all GEM observations remain staged pending publication review.", "Automatic download requires the official GEM form; no scraping or CAPTCHA bypass is attempted."], ["Pilot limited to the United States and technologies already published by the atlas.", "Approximate GEM locations remain unplotted.", "This export has no EIA plant or generator identifier columns, so it cannot produce automatic EIA matches."], recorded_retrieval)
     gem_meta["checksum"] = digest(gem_raw)
     gem = normalize_gem(gem_raw, gem_suffix, gem_meta, eia["records"])
+    if gem["upstream_schema"]:
+        gem_meta["upstream_schema"] = gem["upstream_schema"]
 
     if args.ember_file or args.offline:
         ember_raw, ember_suffix, ember_method = acquire(args.ember_file, None, FIXTURES / "ember-us-2024.json", args.offline)
@@ -587,10 +653,15 @@ def _main(argv: list[str] | None = None) -> int:
     ember_meta["checksum"] = digest(ember_raw)
     ember = normalize_ember(ember_raw, ember_suffix, ember_meta)
 
+    affected_values = {
+        "eia-860m": ["US facility inventory, lifecycle, capacity, and planned operation dates"],
+        "gem-gipt": ["US facility candidate links, status, capacity, ownership, and location evidence"],
+        "ember-yearly-electricity": ["US 2024 national generation aggregates and reconciliation calculations"],
+    }
     source_reports = []
     for meta, raw, suffix, normalized in ((eia_meta, eia_raw, eia_suffix, eia), (gem_meta, gem_raw, gem_suffix, gem), (ember_meta, ember_raw, ember_suffix, ember)):
         path, _ = persist_snapshot(args.store, raw, suffix, meta, normalized, args.dry_run)
-        source_reports.append({**meta, "snapshot_path": str(path), "rows_read": len(normalized["records"]) + normalized["counts"].get("rejected", 0), "observations_created": len(normalized["observations"]), "counts": normalized["counts"], "rejected_rows": normalized.get("rejected_rows", []), "reconciliations": normalized.get("reconciliations", []), "coverage_limitations": "; ".join(meta["limitations"]), "potentially_affected_public_values": ["US facility freshness", "US national 2024 electricity reconciliation"]})
+        source_reports.append({**meta, "snapshot_path": str(path), "rows_read": normalized.get("rows_read", len(normalized["records"]) + normalized["counts"].get("rejected", 0)), "observations_created": len(normalized["observations"]), "counts": normalized["counts"], "rejected_rows": normalized.get("rejected_rows", []), "reconciliations": normalized.get("reconciliations", []), "coverage_limitations": "; ".join(meta["limitations"]), "potentially_affected_public_values": affected_values[meta["source_id"]]})
 
     public_after = digest(PUBLIC_RELEASE.read_bytes())
     if public_before != public_after:
