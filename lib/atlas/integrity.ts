@@ -440,7 +440,11 @@ function compactObservationIds(
   observationIds: string[],
   observations: Map<string, AtlasDataset["observations"][number]>,
 ): string[] {
-  return [...new Set(observationIds.map((id) => `compact-${observations.get(id)?.sourceId ?? `missing-${id}`}`))].toSorted();
+  return [...new Set(observationIds.map((id) => {
+    const sourceId = observations.get(id)?.sourceId;
+    if (sourceId === undefined) throw new Error(`Dangling observation reference: ${id}.`);
+    return `compact-${sourceId}`;
+  }))].toSorted();
 }
 
 function expectedCompactFacility(

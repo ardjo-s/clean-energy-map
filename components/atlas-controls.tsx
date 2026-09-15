@@ -55,7 +55,16 @@ export function ControlPanel({ open, setOpen, filters, allFacilities, geography,
 }
 
 async function downloadCapacityLineage(data: AtlasDataset, facilities: Facility[], geography: string, filters: AtlasFilters) {
-  const response = await fetch("/data/downloads/atlas-v1-full.json");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  let response: Response;
+  try {
+    response = await fetch("/data/downloads/atlas-v1-full.json", { signal: controller.signal });
+  } catch (error) {
+    throw new Error(`Full evidence release download timed out or was aborted (${error instanceof Error ? error.message : "unknown error"}).`);
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) throw new Error(`Full evidence release unavailable (${response.status}).`);
   const parsed = atlasDatasetSchema.safeParse(await response.json());
   if (!parsed.success || parsed.data.release.id !== data.release.id || parsed.data.release.buildId !== data.release.buildId) {
