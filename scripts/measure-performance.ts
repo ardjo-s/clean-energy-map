@@ -15,7 +15,8 @@ type Measurements = Record<keyof typeof budgetsMs, number>;
 
 function median(values: number[]) {
   const sorted = values.toSorted((left, right) => left - right);
-  return sorted[Math.floor(sorted.length / 2)];
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
 async function measure(page: Page) {
